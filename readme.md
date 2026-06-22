@@ -1,6 +1,6 @@
-# Spatial Vector Processing (SVP)
+# Duo console
 
-Spatial Vector Processing (SVP) is a high-performance, two-party socket programming architecture built for low-latency text communication and real-time canvas synchronization over secure local tunnels. Designed to bypass network restrictions with a zero-cloud backend footprint, the system connects a globally accessible static frontend with a local Node.js relay server using Socket.io over a persistent TCP pipeline.
+Duo console is a high-performance, two-party socket programming architecture built for low-latency text communication and real-time canvas synchronization over secure local tunnels. Designed to bypass network restrictions with a zero-cloud backend footprint, the system connects a globally accessible static frontend with a local Node.js relay server using Socket.io over a persistent TCP pipeline.
 
 ---
 
