@@ -1,56 +1,64 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from "react";
 
 interface ConnectScreenProps {
-  onConnect: (username: string) => void
+  onConnect: (connectionString: string) => void;
 }
 
 export default function ConnectScreen({ onConnect }: ConnectScreenProps) {
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState("");
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    if (value.trim()) onConnect(value.trim())
-  }
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = value.trim();
+    if (trimmed) onConnect(trimmed);
+  };
 
   return (
-    <div className="connect-screen">
-      <div className="connect-content">
-        <div className="connect-brand">
-          <div className="connect-logo">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <rect width="48" height="48" rx="12" fill="url(#logo-grad)" />
-              <path d="M16 24l6 6 10-12" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-              <defs>
-                <linearGradient id="logo-grad" x1="0" y1="0" x2="48" y2="48">
-                  <stop stopColor="#7c5cfc" />
-                  <stop offset="1" stopColor="#5c3cfc" />
-                </linearGradient>
-              </defs>
-            </svg>
-          </div>
-          <h1 className="connect-title">Duo Console</h1>
-          <p className="connect-subtitle">Enter your name to start chatting</p>
+    <main className="connect-stage" aria-labelledby="connect-title">
+      <div className="connect-noise" aria-hidden="true" />
+      <section className="connect-poster">
+        <div className="connect-badge-row" aria-hidden="true">
+          <span>BESTIE</span>
+          <span className="badge-vs">×</span>
+          <span>RIVAL</span>
+          <span className="badge-chaos">CHAOS LINE</span>
         </div>
-        <form className="connect-form" onSubmit={handleSubmit}>
-          <div className="connect-input-wrap">
+
+        <div className="connect-mark" aria-hidden="true">
+          <span className="mark-half mark-a">✦</span>
+          <span className="mark-half mark-b">✧</span>
+        </div>
+
+        <div className="connect-copy">
+          <p className="connect-kicker">Paste the secret tunnel</p>
+          <h1 id="connect-title">Duo console</h1>
+          <p className="connect-text">
+            One string, one button, one noisy room for messages, doodles, and
+            image cards.
+          </p>
+        </div>
+
+        <form className="connection-form" onSubmit={handleSubmit}>
+          <label htmlFor="connection-string">Connection string</label>
+          <div className="connection-field">
             <input
-              className="connect-input"
-              type="text"
-              placeholder="Your name..."
+              id="connection-string"
               value={value}
-              onChange={(e) => setValue(e.target.value)}
+              onChange={(event) => setValue(event.target.value)}
+              placeholder="wss://your-tunnel-or-local-line"
+              autoComplete="off"
               autoFocus
-              maxLength={32}
             />
+            <button type="submit" disabled={!value.trim()}>
+              Connect
+            </button>
           </div>
-          <button className="connect-btn" type="submit" disabled={!value.trim()}>
-            Connect
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
-          </button>
+          <p className="connect-helper">
+            UI only for now. This just opens the console and keeps the string
+            visible as a badge.
+          </p>
         </form>
-      </div>
-    </div>
-  )
+      </section>
+    </main>
+  );
 }

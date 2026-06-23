@@ -1,142 +1,252 @@
-import { useState, useRef, useEffect } from 'react'
-import Sidebar from './Sidebar'
-import ImageViewer from './ImageViewer'
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import DrawingCanvas from "./DrawingCanvas";
 
 interface Message {
-  id: number
-  text: string
-  sender: 'user' | 'other'
-  time: string
+  id: number;
+  sender: "left" | "right";
+  text: string;
+  time: string;
 }
 
 interface ChatInterfaceProps {
-  username: string
+  connectionString: string;
 }
 
-const WELCOME_MESSAGE: Message = {
-  id: 0,
-  text: 'Welcome to Duo Console. Start typing a message below.',
-  sender: 'other',
-  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-}
+const imageCards = [
+  {
+    title: "Snack treaty",
+    tag: "truce no. 01",
+    caption: "When the argument ends because fries arrived.",
+    colors: ["#ff4fb8", "#ffe45e"],
+  },
+  {
+    title: "Midnight nonsense",
+    tag: "voice note energy",
+    caption: "Half confession, half meme dump, fully unserious.",
+    colors: ["#2bf6ff", "#111111"],
+  },
+  {
+    title: "Tiny fight museum",
+    tag: "dramatic archive",
+    caption: "Receipts preserved with zero historical neutrality.",
+    colors: ["#ff6b35", "#8cff00"],
+  },
+  {
+    title: "Doodle pact",
+    tag: "best chaos",
+    caption: "You draw something ugly. They make it worse. Perfect.",
+    colors: ["#7b61ff", "#ffd166"],
+  },
+];
 
-export default function ChatInterface({ username }: ChatInterfaceProps) {
-  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE])
-  const [input, setInput] = useState('')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [imageViewerOpen, setImageViewerOpen] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+const starterMessages: Message[] = [
+  {
+    id: 1,
+    sender: "left",
+    text: "Connection accepted. Don’t make the console boring.",
+    time: "now",
+  },
+  {
+    id: 2,
+    sender: "right",
+    text: "Impossible. I brought snacks and terrible sketches.",
+    time: "now",
+  },
+];
+
+export default function ChatInterface({
+  connectionString,
+}: ChatInterfaceProps) {
+  const [messages, setMessages] = useState<Message[]>(starterMessages);
+  const [message, setMessage] = useState("");
+  const [activeSender, setActiveSender] = useState<"left" | "right">("right");
+  const [canvasOpen, setCanvasOpen] = useState(false);
+  const [activeCard, setActiveCard] = useState(0);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const sendMessage = () => {
-    if (!input.trim()) return
-    const userMsg: Message = {
-      id: Date.now(),
-      text: input.trim(),
-      sender: 'user',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    }
-    setMessages((prev) => [...prev, userMsg])
-    setInput('')
+    const text = message.trim();
+    if (!text) return;
 
-    setTimeout(() => {
-      const reply: Message = {
-        id: Date.now() + 1,
-        text: `Echo: ${userMsg.text}`,
-        sender: 'other',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      }
-      setMessages((prev) => [...prev, reply])
-    }, 600)
-  }
+    setMessages((current) => [
+      ...current,
+      {
+        id: Date.now(),
+        sender: activeSender,
+        text,
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      },
+    ]);
+    setMessage("");
+    setActiveSender((sender) => (sender === "left" ? "right" : "left"));
+  };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
+  const handleMessageKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
     }
-  }
+  };
+
+  const previousCard = () => {
+    setActiveCard(
+      (index) => (index - 1 + imageCards.length) % imageCards.length,
+    );
+  };
+
+  const nextCard = () => {
+    setActiveCard((index) => (index + 1) % imageCards.length);
+  };
+
+  const card = imageCards[activeCard];
 
   return (
-    <div className="chat-layout">
-      <header className="chat-header">
-        <div className="chat-header-left">
-          <button
-            className="header-btn"
-            onClick={() => setSidebarOpen(true)}
-            title="Toggle Drawing Canvas"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 19l7-7 3 3-7 7-3-3z" />
-              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-              <path d="M2 2l7.586 7.586" />
-              <circle cx="11" cy="11" r="2" />
-            </svg>
-            <span className="header-btn-label">Draw</span>
-          </button>
+    <main className={`console-page ${canvasOpen ? "canvas-is-open" : ""}`}>
+      <header className="console-topbar">
+        <div className="brand-lockup" aria-label="Duo Console">
+          <span className="brand-tile brand-a">✦</span>
+          <span className="brand-tile brand-b">✧</span>
+          <div>
+            <p>Duo console</p>
+            <span></span>
+          </div>
         </div>
 
-        <div className="chat-header-center">
-          <span className="chat-status-dot" />
-          <span className="chat-username">{username}</span>
+        <div className="connection-chip" title={connectionString}>
+          <span className="chip-dot" />
+          <span>{connectionString}</span>
         </div>
 
-        <div className="chat-header-right">
-          <button
-            className="header-btn"
-            onClick={() => setImageViewerOpen(true)}
-            title="View Images"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <path d="M21 15l-5-5L5 21" />
-            </svg>
-            <span className="header-btn-label">Images</span>
-          </button>
-        </div>
+        <button
+          className="canvas-toggle"
+          type="button"
+          onClick={() => setCanvasOpen((open) => !open)}
+        >
+          {canvasOpen ? "Hide canvas" : "Open canvas"}
+        </button>
       </header>
 
-      <main className="chat-messages">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`message ${msg.sender}`}>
-            <div className="message-bubble">
-              <div className="message-sender">{msg.sender === 'user' ? username : 'Duo'}</div>
-              <div className="message-text">{msg.text}</div>
-              <div className="message-time">{msg.time}</div>
-            </div>
+      <section className="console-grid">
+        <section className="chat-panel" aria-label="Chat interface">
+          <div className="panel-heading brutal-heading">
+            <span>CHAT PIT</span>
+            <strong>{messages.length} notes</strong>
           </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </main>
 
-      <footer className="chat-input-bar">
-        <div className="chat-input-wrap">
-          <textarea
-            className="chat-input"
-            placeholder="Type a message..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={1}
-          />
-          <button
-            className="send-btn"
-            onClick={sendMessage}
-            disabled={!input.trim()}
+          <div className="chat-feed">
+            {messages.map((item) => (
+              <article key={item.id} className={`chat-bubble ${item.sender}`}>
+                <div className="bubble-meta">
+                  <span>{item.sender === "left" ? "Lane A" : "Lane B"}</span>
+                  <time>{item.time}</time>
+                </div>
+                <p>{item.text}</p>
+              </article>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <footer className="message-composer">
+            <div className="sender-switch" aria-label="Choose message lane">
+              <button
+                type="button"
+                className={activeSender === "left" ? "active" : ""}
+                onClick={() => setActiveSender("left")}
+              >
+                Lane A
+              </button>
+              <button
+                type="button"
+                className={activeSender === "right" ? "active" : ""}
+                onClick={() => setActiveSender("right")}
+              >
+                Lane B
+              </button>
+            </div>
+            <div className="composer-row">
+              <textarea
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={handleMessageKeyDown}
+                placeholder="Type chaos here..."
+                rows={2}
+              />
+              <button
+                type="button"
+                onClick={sendMessage}
+                disabled={!message.trim()}
+              >
+                Send
+              </button>
+            </div>
+          </footer>
+        </section>
+
+        <aside className="image-card-panel" aria-label="Image cards">
+          <div className="panel-heading brutal-heading">
+            <span>IMAGE CARDS</span>
+            <strong>
+              {activeCard + 1}/{imageCards.length}
+            </strong>
+          </div>
+
+          <article
+            className="friend-card"
+            style={{
+              background: `linear-gradient(135deg, ${card.colors[0]}, ${card.colors[1]})`,
+            }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
-            </svg>
-          </button>
-        </div>
-      </footer>
+            <span className="friend-card-tag">{card.tag}</span>
+            <h2>{card.title}</h2>
+            <p>{card.caption}</p>
+            <div className="card-chaos-lines" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+          </article>
 
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <ImageViewer isOpen={imageViewerOpen} onClose={() => setImageViewerOpen(false)} />
-    </div>
-  )
+          <div className="card-controls">
+            <button
+              type="button"
+              onClick={previousCard}
+              aria-label="Previous image card"
+            >
+              ←
+            </button>
+            <div className="card-dots" aria-hidden="true">
+              {imageCards.map((item, index) => (
+                <span
+                  key={item.title}
+                  className={index === activeCard ? "active" : ""}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={nextCard}
+              aria-label="Next image card"
+            >
+              →
+            </button>
+          </div>
+        </aside>
+
+        <aside className="canvas-panel" aria-label="Drawing canvas">
+          <div className="panel-heading brutal-heading">
+            <span>DOODLE DAMAGE</span>
+            <strong>toggle panel</strong>
+          </div>
+          <DrawingCanvas />
+        </aside>
+      </section>
+    </main>
+  );
 }

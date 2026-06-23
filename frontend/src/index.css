@@ -1,72 +1,50 @@
 :root {
-  --bg: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1a1a26;
-  --surface: #1e1e2e;
-  --surface-hover: #28283a;
-  --border: #2a2a3e;
-  --border-light: #3a3a52;
-  --text: #a0a0b8;
-  --text-secondary: #6c6c88;
-  --text-heading: #e8e8f0;
-  --accent: #7c5cfc;
-  --accent-hover: #9174ff;
-  --accent-glow: rgba(124, 92, 252, 0.25);
-  --danger: #ff4d6a;
-  --success: #4ade80;
-  --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --radius: 12px;
-  --radius-sm: 8px;
-  --radius-lg: 16px;
-  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--text);
-  background: var(--bg);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+    color: #111111;
+    background: #fff7df;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+html {
+    min-height: 100%;
+    background: #fff7df;
 }
 
 body {
-  margin: 0;
-  overflow: hidden;
-  height: 100vh;
-  width: 100vw;
+    min-width: 320px;
+    min-height: 100dvh;
+    margin: 0;
+    background: #fff7df;
 }
 
 #root {
-  height: 100vh;
-  width: 100vw;
-  display: flex;
-  flex-direction: column;
+    min-height: 100dvh;
 }
 
-input, button, textarea {
-  font-family: inherit;
-  font-size: inherit;
+::selection {
+    background: #8cff00;
+    color: #111111;
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
+    width: 14px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+    background: #fff7df;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--border-light);
+    background: #111111;
+    border: 4px solid #fff7df;
 }

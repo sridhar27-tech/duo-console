@@ -1,20 +1,14 @@
-import { useState } from 'react'
-import ConnectScreen from './components/ConnectScreen'
-import ChatInterface from './components/ChatInterface'
-import './App.css'
+import { useState } from "react";
+import ConnectScreen from "./components/ConnectScreen";
+import ChatInterface from "./components/ChatInterface";
+import "./App.css";
 
 export default function App() {
-  const [connected, setConnected] = useState(false)
-  const [username, setUsername] = useState('')
+  const [connectionString, setConnectionString] = useState("");
 
-  const handleConnect = (name: string) => {
-    setUsername(name)
-    setConnected(true)
+  if (!connectionString) {
+    return <ConnectScreen onConnect={setConnectionString} />;
   }
 
-  if (!connected) {
-    return <ConnectScreen onConnect={handleConnect} />
-  }
-
-  return <ChatInterface username={username} />
+  return <ChatInterface connectionString={connectionString} />;
 }
