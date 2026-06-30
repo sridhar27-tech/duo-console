@@ -4,18 +4,49 @@ import {
   useState,
   type MouseEvent,
   type TouchEvent,
+  type MutableRefObject,
 } from "react";
 
 const inkColors = ["#111111", "#ff4fb8", "#2bf6ff", "#ffe45e", "#8cff00"];
 const brushSizes = [3, 7, 12];
 
-export default function DrawingCanvas() {
+interface DrawingCanvasProps {
+  /**
+   * Called with (x, y) CSS-space coordinates whenever the local user draws
+   * a stroke point. The parent packs these into a 5-byte binary ArrayBuffer
+   * and emits them via socket.emit("binary_stroke").
+   */
+  onStroke?: (x: number, y: number) => void;
+  /**
+   * Called when the local user clicks Clear — parent should emit
+   * socket.emit("canvas_clear") to sync the peer's canvas.
+   */
+  onClear?: () => void;
+  /**
+   * A ref callback so the parent can imperatively trigger a local clear
+   * (e.g. on incoming canvas_clear event or on Escape boss trigger).
+   */
+  clearRef?: MutableRefObject<(() => void) | null>;
+  /**
+   * A ref the parent sets so it can push an incoming peer stroke (x, y)
+   * directly onto this canvas without re-renders.
+   */
+  peerStrokeRef?: MutableRefObject<((x: number, y: number) => void) | null>;
+}
+
+export default function DrawingCanvas({
+  onStroke,
+  onClear,
+  clearRef,
+  peerStrokeRef,
+}: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const resizeCanvasRef = useRef<() => void>(() => {});
   const [color, setColor] = useState(inkColors[0]);
   const [brushSize, setBrushSize] = useState(7);
 
+  // ── Canvas resize with snapshot preservation ──────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -54,7 +85,6 @@ export default function DrawingCanvas() {
           nextHeight,
         );
       }
-
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
       context.lineCap = "round";
       context.lineJoin = "round";
@@ -66,29 +96,58 @@ export default function DrawingCanvas() {
     const observer = new ResizeObserver(resizeCanvas);
     observer.observe(canvas);
     window.addEventListener("resize", resizeCanvas);
-
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", resizeCanvas);
     };
   }, []);
 
+  // ── Expose imperative clear to parent (for boss trigger + peer clear) ──────
+  useEffect(() => {
+    if (!clearRef) return;
+    clearRef.current = () => {
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext("2d");
+      if (!canvas || !context) return;
+      const pixelRatio = window.devicePixelRatio || 1;
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    };
+  }, [clearRef]);
+
+  // ── Expose peer stroke painter to parent ──────────────────────────────────
+  // The parent decodes the incoming 5-byte ArrayBuffer and calls this
+  // with the x/y CSS-space coordinates to draw on the local canvas.
+  useEffect(() => {
+    if (!peerStrokeRef) return;
+    peerStrokeRef.current = (x: number, y: number) => {
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext("2d");
+      if (!canvas || !context) return;
+      const pixelRatio = window.devicePixelRatio || 1;
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.lineTo(x, y);
+      context.stroke();
+    };
+  }, [peerStrokeRef]);
+
+  // ── Pointer helpers ───────────────────────────────────────────────────────
   const getPoint = (
     event: MouseEvent<HTMLCanvasElement> | TouchEvent<HTMLCanvasElement>,
   ) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-
     if ("touches" in event) {
       const touch = event.touches[0];
       if (!touch) return null;
       return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
     }
-
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
 
+  // ── Drawing handlers ──────────────────────────────────────────────────────
   const startDrawing = (
     event: MouseEvent<HTMLCanvasElement> | TouchEvent<HTMLCanvasElement>,
   ) => {
@@ -119,12 +178,16 @@ export default function DrawingCanvas() {
 
     context.lineTo(point.x, point.y);
     context.stroke();
+
+    // Emit binary stroke to peer via parent callback
+    onStroke?.(point.x, point.y);
   };
 
   const stopDrawing = () => {
     drawingRef.current = false;
   };
 
+  // ── Local + remote clear ──────────────────────────────────────────────────
   const clearCanvas = () => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
@@ -133,6 +196,8 @@ export default function DrawingCanvas() {
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    // Notify peer
+    onClear?.();
   };
 
   return (

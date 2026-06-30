@@ -1,0 +1,25 @@
+{
+  "name": "duo-console",
+  "version": "1.0.0",
+  "description": "Duo console is a high-performance, two-party socket programming architecture built for low-latency text communication and real-time canvas synchronization over secure local tunnels. Designed to bypass network restrictions with a zero-cloud backend footprint, the system connects a globally accessible static frontend with a local Node.js relay server using Socket.io over a persistent TCP pipeline.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gurunesh30/duo-console.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/gurunesh30/duo-console/issues"
+  },
+  "homepage": "https://github.com/gurunesh30/duo-console#readme",
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}
