@@ -29,6 +29,11 @@ export interface MediaPayload {
   ts: number;
 }
 
+export interface ReactionPayload {
+  msgId: number;
+  emoji: string;
+}
+
 export interface PeerStatus {
   connected: number;
 }
@@ -42,6 +47,7 @@ interface UseSocketOptions {
   onPeerStatus: (status: PeerStatus) => void;
   onRoomFull: () => void;
   onAuthError: (reason: string) => void;
+  onReaction: (payload: ReactionPayload) => void;
 }
 
 export function useSocket({
@@ -53,6 +59,7 @@ export function useSocket({
   onPeerStatus,
   onRoomFull,
   onAuthError,
+  onReaction,
 }: UseSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
 
@@ -76,6 +83,7 @@ export function useSocket({
     socket.on("canvas_clear", onCanvasClear);
     socket.on("peer_status", onPeerStatus);
     socket.on("room_full", onRoomFull);
+    socket.on("reaction", onReaction);
 
     // Handle auth rejection from the server middleware
     socket.on("connect_error", (err) => {
@@ -117,5 +125,9 @@ export function useSocket({
     socketRef.current?.emit("canvas_clear");
   }, []);
 
-  return { sendChatMsg, sendMediaShare, sendBinaryStroke, sendCanvasClear };
+  const sendReaction = useCallback((payload: ReactionPayload) => {
+    socketRef.current?.emit("reaction", payload);
+  }, []);
+
+  return { sendChatMsg, sendMediaShare, sendBinaryStroke, sendCanvasClear, sendReaction };
 }

@@ -5,7 +5,7 @@ import {
   useCallback,
   type KeyboardEvent,
 } from "react";
-import DrawingCanvas from "./DrawingCanvas";
+import Sidebar from "./Sidebar";
 import ImageViewer from "./ImageViewer";
 import { useSocket, type ChatPayload } from "../hooks/useSocket";
 import { encryptAES, decryptAES } from "../utils/crypto";
@@ -15,6 +15,7 @@ interface Message {
   sender: "me" | "peer";
   text: string;
   time: string;
+  reactions: Record<string, number>; // emoji → count
 }
 
 interface ChatInterfaceProps {
@@ -33,6 +34,7 @@ export default function ChatInterface({
   const [peerOnline, setPeerOnline] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [roomFull, setRoomFull] = useState(false);
+  const [activeReactionId, setActiveReactionId] = useState<number | null>(null);
 
   // Gate 3: Boss trigger — tracks whether the feed is wiped from view
   const [bossMode, setBossMode] = useState(false);
@@ -60,6 +62,7 @@ export default function ChatInterface({
           id: payload.ts,
           sender: "peer",
           text: plaintext,
+          reactions: {},
           time: new Date(payload.ts).toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
@@ -68,6 +71,26 @@ export default function ChatInterface({
       ]);
     },
     [psk],
+  );
+
+  // ── Incoming reaction from peer ────────────────────────────────────────────
+  const handleIncomingReaction = useCallback(
+    (payload: { msgId: number; emoji: string }) => {
+      setMessages((current) =>
+        current.map((msg) =>
+          msg.id === payload.msgId
+            ? {
+                ...msg,
+                reactions: {
+                  ...msg.reactions,
+                  [payload.emoji]: (msg.reactions[payload.emoji] ?? 0) + 1,
+                },
+              }
+            : msg,
+        ),
+      );
+    },
+    [],
   );
 
   // ── Incoming binary stroke — decode 5-byte buffer and paint on canvas ──────
@@ -81,7 +104,7 @@ export default function ChatInterface({
   }, []);
 
   // ── Socket hook ────────────────────────────────────────────────────────────
-  const { sendChatMsg, sendBinaryStroke, sendCanvasClear } = useSocket({
+  const { sendChatMsg, sendBinaryStroke, sendCanvasClear, sendReaction } = useSocket({
     serverUrl: connectionString,
     onChatMsg: handleIncomingChat,
     onMediaShare: () => {},
@@ -92,6 +115,7 @@ export default function ChatInterface({
     onPeerStatus: ({ connected }) => setPeerOnline(connected >= 2),
     onRoomFull: () => setRoomFull(true),
     onAuthError: (reason) => setAuthError(reason),
+    onReaction: handleIncomingReaction,
   });
 
   // ── Gate 3: Escape key boss trigger ────────────────────────────────────────
@@ -129,6 +153,7 @@ export default function ChatInterface({
         id: ts,
         sender: "me",
         text,
+        reactions: {},
         time: new Date(ts).toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
@@ -140,6 +165,30 @@ export default function ChatInterface({
     sendChatMsg({ cipher, ts });
     setMessage("");
   };
+
+  // ── React to a message ─────────────────────────────────────────────────────
+  const handleReact = useCallback(
+    (msgId: number, emoji: string) => {
+      // Apply locally
+      setMessages((current) =>
+        current.map((msg) =>
+          msg.id === msgId
+            ? {
+                ...msg,
+                reactions: {
+                  ...msg.reactions,
+                  [emoji]: (msg.reactions[emoji] ?? 0) + 1,
+                },
+              }
+            : msg,
+        ),
+      );
+      // Sync to peer
+      sendReaction({ msgId, emoji });
+      setActiveReactionId(null);
+    },
+    [sendReaction],
+  );
 
   const handleMessageKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -181,7 +230,7 @@ export default function ChatInterface({
 
   return (
     <>
-      <main className={`console-page ${canvasOpen ? "canvas-is-open" : ""}`}>
+      <main className="console-page">
         <header className="console-topbar">
           <div className="brand-lockup" aria-label="Duo Console">
             <span className="brand-tile brand-a">✦</span>
@@ -213,6 +262,8 @@ export default function ChatInterface({
               className="canvas-toggle"
               type="button"
               onClick={() => setCanvasOpen((open) => !open)}
+              aria-expanded={canvasOpen}
+              aria-controls="canvas-sidebar"
             >
               {canvasOpen ? "Hide canvas" : "Open canvas"}
             </button>
@@ -256,6 +307,42 @@ export default function ChatInterface({
                       <time>{item.time}</time>
                     </div>
                     <p>{item.text}</p>
+
+                    {/* ── Reactions row ── */}
+                    <div className="reaction-row">
+                      {Object.entries(item.reactions).map(([emoji, count]) => (
+                        <span key={emoji} className="reaction-chip">
+                          {emoji} {count > 1 && <strong>{count}</strong>}
+                        </span>
+                      ))}
+                      <button
+                        className="reaction-trigger"
+                        type="button"
+                        aria-label="Add reaction"
+                        onClick={() =>
+                          setActiveReactionId(
+                            activeReactionId === item.id ? null : item.id,
+                          )
+                        }
+                      >
+                        +
+                      </button>
+                      {activeReactionId === item.id && (
+                        <div className="reaction-picker" role="toolbar" aria-label="Pick a reaction">
+                          {["👍", "❤️", "😂", "😮", "🔥"].map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              className="reaction-option"
+                              onClick={() => handleReact(item.id, emoji)}
+                              aria-label={`React with ${emoji}`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </article>
                 ))}
                 <div ref={messagesEndRef} />
@@ -281,23 +368,20 @@ export default function ChatInterface({
                 </div>
               </footer>
             </section>
-
-            {/* ── Canvas Panel ── */}
-            <aside className="canvas-panel" aria-label="Drawing canvas">
-              <div className="panel-heading brutal-heading">
-                <span>DOODLE DAMAGE</span>
-                <strong>toggle panel</strong>
-              </div>
-              <DrawingCanvas
-                onStroke={sendBinaryStroke}
-                onClear={sendCanvasClear}
-                clearRef={canvasClearRef}
-                peerStrokeRef={peerStrokeRef}
-              />
-            </aside>
           </section>
         )}
       </main>
+
+      {/* ── Canvas Sidebar ── */}
+      <Sidebar
+        id="canvas-sidebar"
+        isOpen={canvasOpen}
+        onClose={() => setCanvasOpen(false)}
+        onStroke={sendBinaryStroke}
+        onClear={sendCanvasClear}
+        clearRef={canvasClearRef}
+        peerStrokeRef={peerStrokeRef}
+      />
 
       <ImageViewer
         isOpen={imageViewerOpen}

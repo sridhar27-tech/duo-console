@@ -1,11 +1,24 @@
 # Dependencies
-node_modules/
+node_modules
 jspm_packages/
 web_modules/
 
+# Production/Build outputs
+dist/
+dist-ssr/
+build/
+out/
+*.tsbuildinfo
+
 # Requested Workspace & Project Configurations
 .vscode/
-.kiro
+.kiro/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Local Environment Variables
 .env
@@ -13,9 +26,10 @@ web_modules/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.*.local
 
 # Server Logs & Runtime Data
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -25,6 +39,7 @@ pnpm-debug.log*
 # Diagnostic & Coverage Reports
 coverage/
 .nyc_output/
+.eslintcache
 
 # OS/System Specific files
 .DS_Store
@@ -34,4 +49,5 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
+# Specs
 specs/
