@@ -12,11 +12,12 @@ const brushSizes = [3, 7, 12];
 
 interface DrawingCanvasProps {
   /**
-   * Called with (x, y) CSS-space coordinates whenever the local user draws
-   * a stroke point. The parent packs these into a 5-byte binary ArrayBuffer
-   * and emits them via socket.emit("binary_stroke").
+   * Called when the local user draws a stroke point.
+   * opcode 0x01 = new stroke begin, 0x02 = continue stroke.
+   * color is the current ink hex string.
+   * The parent packs these into an 8-byte binary ArrayBuffer and emits via socket.
    */
-  onStroke?: (x: number, y: number) => void;
+  onStroke?: (x: number, y: number, opcode: 0x01 | 0x02, color: string) => void;
   /**
    * Called when the local user clicks Clear — parent should emit
    * socket.emit("canvas_clear") to sync the peer's canvas.
@@ -31,7 +32,7 @@ interface DrawingCanvasProps {
    * A ref the parent sets so it can push an incoming peer stroke (x, y)
    * directly onto this canvas without re-renders.
    */
-  peerStrokeRef?: MutableRefObject<((x: number, y: number) => void) | null>;
+  peerStrokeRef?: MutableRefObject<((buffer: ArrayBuffer) => void) | null>;
 }
 
 export default function DrawingCanvas({
@@ -117,18 +118,40 @@ export default function DrawingCanvas({
   }, [clearRef]);
 
   // ── Expose peer stroke painter to parent ──────────────────────────────────
-  // The parent decodes the incoming 5-byte ArrayBuffer and calls this
-  // with the x/y CSS-space coordinates to draw on the local canvas.
+  // The parent decodes the incoming 8-byte ArrayBuffer and calls this
+  // with the full stroke context to draw on the local canvas.
   useEffect(() => {
     if (!peerStrokeRef) return;
-    peerStrokeRef.current = (x: number, y: number) => {
+    peerStrokeRef.current = (buffer: ArrayBuffer) => {
       const canvas = canvasRef.current;
       const context = canvas?.getContext("2d");
       if (!canvas || !context) return;
+
+      const view = new DataView(buffer);
+      const opcode = view.getUint8(0);
+      const x = view.getUint16(1, false);
+      const y = view.getUint16(3, false);
+      const r = view.getUint8(5);
+      const g = view.getUint8(6);
+      const b = view.getUint8(7);
+      const color = `rgb(${r},${g},${b})`;
+
       const pixelRatio = window.devicePixelRatio || 1;
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-      context.lineTo(x, y);
-      context.stroke();
+      context.strokeStyle = color;
+      context.lineWidth = 7; // peer uses mid brush; local brush size doesn't affect peer render
+      context.lineCap = "round";
+      context.lineJoin = "round";
+
+      if (opcode === 0x01) {
+        // New stroke — begin a fresh path at this point
+        context.beginPath();
+        context.moveTo(x, y);
+      } else {
+        // Continue existing stroke
+        context.lineTo(x, y);
+        context.stroke();
+      }
     };
   }, [peerStrokeRef]);
 
@@ -164,6 +187,9 @@ export default function DrawingCanvas({
     context.strokeStyle = color;
     context.lineWidth = brushSize;
     context.moveTo(point.x, point.y);
+
+    // Opcode 0x01 — signals the peer to beginPath at this coordinate
+    onStroke?.(point.x, point.y, 0x01, color);
   };
 
   const draw = (
@@ -179,8 +205,8 @@ export default function DrawingCanvas({
     context.lineTo(point.x, point.y);
     context.stroke();
 
-    // Emit binary stroke to peer via parent callback
-    onStroke?.(point.x, point.y);
+    // Opcode 0x02 — signals the peer to lineTo and stroke at this coordinate
+    onStroke?.(point.x, point.y, 0x02, color);
   };
 
   const stopDrawing = () => {

@@ -46,7 +46,7 @@ export default function ChatInterface({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const canvasClearRef = useRef<(() => void) | null>(null);
-  const peerStrokeRef = useRef<((x: number, y: number) => void) | null>(null);
+  const peerStrokeRef = useRef<((buffer: ArrayBuffer) => void) | null>(null);
 
   // ── Scroll to bottom when new messages arrive ──────────────────────────────
   useEffect(() => {
@@ -119,14 +119,9 @@ export default function ChatInterface({
     [],
   );
 
-  // ── Incoming binary stroke — decode 5-byte buffer and paint on canvas ──────
+  // ── Incoming binary stroke — pass raw buffer directly to canvas renderer ──
   const handleBinaryStroke = useCallback((buffer: ArrayBuffer) => {
-    const view = new DataView(buffer);
-    const opcode = view.getUint8(0);
-    if (opcode !== 0x01) return;
-    const x = view.getUint16(1, false); // big-endian
-    const y = view.getUint16(3, false);
-    peerStrokeRef.current?.(x, y);
+    peerStrokeRef.current?.(buffer);
   }, []);
 
   // ── Socket hook ────────────────────────────────────────────────────────────

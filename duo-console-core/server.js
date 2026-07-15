@@ -21,7 +21,7 @@ const io = new Server(server, {
   }
 });
 
-// 2. Token Synchronization (Reconciled from audit: "duo-console-secret-2025")
+// 2. Token Synchronization (must match AUTH_TOKEN in useSocket.ts)
 const AUTH_TOKEN = "duo-console-secret-2025";
 
 // 3. Security Gate: Handshake Middleware

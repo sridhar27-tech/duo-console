@@ -5,10 +5,10 @@ interface SidebarProps {
   id?: string
   isOpen: boolean
   onClose: () => void
-  onStroke?: (x: number, y: number) => void
+  onStroke?: (x: number, y: number, opcode: 0x01 | 0x02, color: string) => void
   onClear?: () => void
   clearRef?: MutableRefObject<(() => void) | null>
-  peerStrokeRef?: MutableRefObject<((x: number, y: number) => void) | null>
+  peerStrokeRef?: MutableRefObject<((buffer: ArrayBuffer) => void) | null>
 }
 
 export default function Sidebar({
