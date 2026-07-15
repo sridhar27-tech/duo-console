@@ -19,6 +19,7 @@ interface ImageItem {
 interface ImageViewerProps {
   isOpen: boolean;
   onClose: () => void;
+  onShare?: (compressedFile: File) => Promise<void>;
 }
 
 const DEFAULT_GALLERY: ImageItem[] = [
@@ -48,7 +49,7 @@ const DEFAULT_GALLERY: ImageItem[] = [
   },
 ];
 
-export default function ImageViewer({ isOpen, onClose }: ImageViewerProps) {
+export default function ImageViewer({ isOpen, onClose, onShare }: ImageViewerProps) {
   const [gallery, setGallery] = useState<ImageItem[]>(DEFAULT_GALLERY);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isDragging, setIsDrawing] = useState(false);
@@ -137,6 +138,12 @@ export default function ImageViewer({ isOpen, onClose }: ImageViewerProps) {
 
             setGallery((prev) => [newImage, ...prev]);
             setCurrentIndex(0); // Focus on new upload
+
+            // Trigger Cloudinary upload + peer share if handler provided
+            if (onShare) {
+              const compressedFile = new File([blob], file.name, { type: "image/jpeg" });
+              onShare(compressedFile);
+            }
           },
           "image/jpeg",
           0.5,

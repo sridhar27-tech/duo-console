@@ -2,6 +2,7 @@ import type { MutableRefObject } from 'react'
 import DrawingCanvas from './DrawingCanvas'
 
 interface SidebarProps {
+  id?: string
   isOpen: boolean
   onClose: () => void
   onStroke?: (x: number, y: number) => void
@@ -11,6 +12,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
+  id,
   isOpen,
   onClose,
   onStroke,
@@ -26,6 +28,7 @@ export default function Sidebar({
         aria-hidden="true"
       />
       <aside
+        id={id}
         className={`sidebar ${isOpen ? 'open' : ''}`}
         aria-label="Drawing canvas panel"
         aria-hidden={!isOpen}

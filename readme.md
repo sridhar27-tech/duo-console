@@ -1,12 +1,10 @@
-# Duo console
+# Duo Console
 
-Duo console is a high-performance, two-party socket programming architecture built for low-latency text communication and real-time canvas synchronization over secure local tunnels. Designed to bypass network restrictions with a zero-cloud backend footprint, the system connects a globally accessible static frontend with a local Node.js relay server using Socket.io over a persistent TCP pipeline.
+Duo Console is a two-party, real-time communication system built for low-latency text messaging and synchronized canvas drawing over secure local tunnels. A globally accessible static frontend connects to a local Node.js relay server via Socket.io over an Ngrok-exposed WebSocket pipeline.
 
 ---
 
-## Architecture Overview
-
-The system implements a stateful Client-Server topology utilizing a hybrid local-cloud infrastructure. The backend server runs locally on a host machine, exposed to the WAN via an encrypted tunnel, while the static frontend interface is hosted on a CDN.
+## Architecture
 
 ```
 +──────────────────────+                     +───────────────+                     +─────────────────────+
@@ -20,101 +18,240 @@ The system implements a stateful Client-Server topology utilizing a hybrid local
                                             |   Cloudinary   |
                                             | Media Bucket   |
                                             +────────────────+
-
 ```
 
-### Components and Logic Justifications
-
-* **Socket.io Relay Server (Local Host):** Built on Node.js, this stateful layer handles connection persistence, heartbeat monitoring, and client multiplexing. Socket.io runs over the TCP stack, guaranteeing that packets are delivered in exact chronological order. If a connection drops temporarily due to network migration, Socket.io buffers outbound packets in memory and flushes them immediately upon re-connection.
-* **Ngrok Tunneling Proxy:** Exposes the local Node.js server port to the public internet via an ephemeral, randomized URL. It manages automated TLS/SSL termination, transforming unencrypted local traffic into a secure HTTPS/WSS stream. This satisfies the browser's Mixed-Content blocking policies when connecting from a cloud-hosted frontend.
-* **Vercel Static Hosting:** Deploys the uncompiled frontend interface. This grants the remote client a permanent access point without requiring any local developer environment setup.
-* **Cloudinary Media API:** Offloads binary image transmission from the stateful socket architecture to an asynchronous HTTPS asset bucket, preventing Head-of-Line blocking within the real-time pipe.
+**Stack:**
+- **Backend:** Node.js + Express + Socket.io v4
+- **Frontend:** React 19 + TypeScript + Vite
+- **Tunnel:** Ngrok (ephemeral HTTPS/WSS bridge)
+- **Encryption:** CryptoJS AES (symmetric)
+- **Hosting:** Vercel (static frontend)
 
 ---
 
-## Hybrid Protocol Specifications
+## Features
 
-To ensure maximum throughput under strict or throttled network conditions, the system isolates high-frequency drawing actions from low-frequency messaging actions.
+### 1. Secure Connection Screen
+
+The entry point before the session starts. Both users must supply two inputs:
+
+- **Ngrok URL** — the ephemeral server address for that session (e.g. `https://abc123.ngrok-free.app`)
+- **Pre-Shared Key (PSK)** — a symmetric encryption key both parties agree on before connecting
+
+The app holds at this screen until both fields are filled and submitted. No connection is attempted prematurely.
+
+---
+
+### 2. End-to-End Encrypted Chat
+
+Real-time text messaging with AES encryption on every payload.
+
+- Messages are **encrypted with the PSK on the sender's device** before leaving the browser using CryptoJS AES.
+- The server only routes ciphertext blobs — it never sees plaintext.
+- If a peer provides the wrong PSK, received messages are silently discarded (decryption returns `null`).
+- Each message carries a millisecond timestamp used for ordering and as a unique ID.
+- Messages are sent on `Enter` key or via the Send button. `Shift+Enter` creates a newline.
+- Sent messages appear on the right (`Lane B`), received messages on the left (`Lane A`), with a formatted timestamp on each bubble.
+
+---
+
+### 3. Emoji Reactions
+
+Each chat message can receive emoji reactions from either party.
+
+- Click the `+` button on any message to open the reaction picker.
+- Available reactions: 👍 ❤️ 😂 😮 🔥
+- Reactions are synced to the peer in real time over the `reaction` socket event.
+- Reaction counts are displayed on the bubble. Multiple reactions from both sides stack and accumulate.
+
+---
+
+### 4. Real-Time Collaborative Drawing Canvas
+
+A shared whiteboard that streams drawing strokes to the peer in real time using a **binary protocol** for minimal overhead.
+
+#### Binary Stroke Protocol
+
+Canvas coordinates are packed into a **5-byte `ArrayBuffer`** per stroke point and emitted on the `binary_stroke` channel:
+
+| Byte(s) | Size    | Content              |
+|---------|---------|----------------------|
+| 0       | 1 byte  | Opcode (`0x01` = draw stroke) |
+| 1–2     | 2 bytes | X coordinate (Uint16, big-endian) |
+| 3–4     | 2 bytes | Y coordinate (Uint16, big-endian) |
+
+This reduces per-packet size by up to 80% versus JSON, enabling sub-millisecond stroke feedback without client-side throttling.
+
+#### Canvas Features
+
+- **Color palette:** 5 ink colors — black, pink, cyan, yellow, green
+- **Brush sizes:** 3px, 7px, 12px
+- **Mouse and touch input** both supported
+- **Canvas resize with snapshot preservation** — resizing the window or sidebar does not wipe existing strokes; existing content is redrawn to the new dimensions
+- **Peer stroke rendering** — incoming binary strokes from the peer are decoded and painted directly onto the local canvas without triggering React re-renders
+- **Clear canvas** — wipes local canvas and emits `canvas_clear` to sync the peer's canvas
+- The canvas lives in a **slide-in sidebar panel** toggled from the top bar
+
+---
+
+### 5. Image Upload and Optimization Pipeline
+
+A local client-side image compression and gallery viewer, accessible via the "Images" button in the top bar.
+
+#### Compression Pipeline (runs entirely in the browser)
+
+1. **Intercept** — file reader pauses transmission before any network request
+2. **Rasterize** — raw file is drawn onto a hidden in-memory HTML5 canvas
+3. **Downscale** — dimensions are scaled to a maximum 600px on the longest axis while preserving aspect ratio
+4. **Compress** — canvas exports a JPEG blob at 50% quality, typically reducing multi-megabyte source files to 50–100 KB
+
+#### Gallery Features
+
+- Uploaded images are prepended to the gallery and focused immediately
+- Compression stats are shown for each image: raw buffer size, optimized size, and percentage saved
+- **Drag and drop** upload support — drag an image file directly onto the display area
+- **Keyboard navigation** — `←` / `→` arrows cycle through gallery images; `Escape` closes the viewer
+- **Thumbnail carousel** at the bottom for quick image switching
+- Placeholder gradient swatches are included by default as demo items
+
+---
+
+### 6. Three-Layer Security Model
+
+#### Gate 1 — Handshake Token Validation (Server)
+
+The Socket.io server runs an `io.use()` middleware that checks an `AUTH_TOKEN` sent in the WebSocket handshake's `auth` object. Connections that don't match the expected token are dropped immediately with an authentication error before reaching any event handlers.
+
+#### Gate 2 — End-to-End AES Encryption (Client)
+
+Text messages and media URLs are AES-encrypted on the sender's device using CryptoJS before hitting the socket. The relay server forwards ciphertext only. Even if traffic is intercepted at the Ngrok proxy or any intermediate network point, the content is unreadable without the PSK.
 
 ```
-                  +─── [ JSON String Data ] ─────► Text Messages & Cloudinary Links
-                  │                                (High Security / Low Frequency)
-[ Data Router ] ──+
-                  │
-                  └─── [ Binary ArrayBuffer ] ───► Live Canvas Drawing Coordinates
-                                                   (Low Latency / High Frequency)
-
+encrypt(plaintext, psk) → base64 ciphertext  →  network  →  decrypt(ciphertext, psk) → plaintext
 ```
 
-### 1. High-Frequency Vector Stream (Binary)
+#### Gate 3 — Boss Mode / Emergency Clear (Client)
 
-Canvas coordinates are packed frame-for-frame into a custom, raw 5-byte memory allocation block (`ArrayBuffer`) and emitted over a dedicated `binary_stroke` channel:
+Pressing `Escape` (while the image viewer is not open) toggles **Boss Mode**:
 
-* **Byte 0 (1 Byte):** Opcode Operational Identifier (`0x01` identifies drawing data).
-* **Bytes 1-2 (2 Bytes / Uint16):** X-coordinate value (supports displays up to 65,535 pixels).
-* **Bytes 3-4 (2 Bytes / Uint16):** Y-coordinate value.
+- The entire message feed is hidden from the DOM
+- The drawing canvas is wiped
+- A neutral decoy screen is displayed ("Module 4: Spatial Vector Processing Controls")
+- Pressing `Escape` again restores the full interface
 
-*Justification:* Standard JSON representation of coordinates (`{"x":1024,"y":768}`) requires 25 to 40 bytes. Serializing directly to a raw bitstream downsizes individual packet sizes by up to 80%. This removes serialization lag, eliminating the need for client-side throttling and enabling sub-millisecond drawing feedback.
-
-### 2. Low-Frequency Messaging Stream (JSON)
-
-Text messages and Cloudinary media links are structured into standard stringified JSON blocks and emitted over the `chat_msg` and `media_share` channels. This occurs intermittently, making the minimal framing overhead negligible.
+Messages are preserved in memory — only the visual display is cleared.
 
 ---
 
-## Cryptographic and Security Gates
+### 7. Peer Presence Indicator
 
-Absolute exclusivity is maintained via three independent authentication and security layers:
+The top bar shows a live connection status dot:
 
-* **Gate 1: Handshake Token Validation:** During the initialization of the WebSocket protocol, the client must pass a hardcoded authorization token inside the connection handshake metadata. If this token does not match the server's environment variable, the Node.js backend drops the socket instantly via `socket.disconnect(true)`.
-* **Gate 2: End-to-End Encryption (E2EE):** Text payloads and Cloudinary link strings are encrypted on the client device using symmetric **AES-GCM** via the CryptoJS library before hitting the network. The server only routes ciphertext string payloads. If the data is captured via an intermediary router or packet sniffer, it renders as unreadable cryptographic garbage.
-* **Gate 3: Self-Clearing Local Caches:** A hardware-level keypress event listener monitors the active window. Pressing the `Escape` key immediately flushes the visible text message arrays from DOM memory and clears the canvas vector canvas space, acting as an instant manual clean utility.
+- **Green (acid)** — peer is online (2 clients connected to the room)
+- **Orange** — waiting for the peer to connect
 
----
-
-## Image Optimization Pipeline
-
-To maintain socket lane integrity, high-resolution smartphone imagery undergoes automated client-side downscaling and compression prior to upload:
-
-1. **Interception:** A file reader event pauses transmission before any network request occurs.
-2. **Rasterization:** The raw file is drawn to an invisible, memory-isolated HTML5 canvas layout.
-3. **Downscaling:** The logic scales the image dimensions to a strict maximum 600-pixel axis boundary while preserving the aspect ratio.
-4. **Compression:** The canvas exports the data as a compressed JPEG blob set to a 50% quality matrix (`image/jpeg`, 0.5), shrinking multi-megabyte source files down to light 50KB to 100KB packets before cloud transport.
+The indicator updates in real time via the `peer_status` socket event.
 
 ---
 
-## Walkthrough: System Launch Sequence
+### 8. Error and Room States
 
-### Step 1: Initialize Local Host Server
+- **Auth failure** — if the server rejects the handshake token, a "connection refused" screen is shown with the server's error message and a Retry button that reloads the page.
+- **Room full** — if a third client attempts to connect, a "room full" screen is shown. The server enforces a two-client maximum per room.
 
-Navigate to the directory containing your backend code and start the Node.js application:
+---
+
+### 9. Socket Infrastructure
+
+The `useSocket` hook manages the full socket lifecycle:
+
+- Single authenticated Socket.io connection per session, created when `serverUrl` is set
+- Transport locked to `websocket` (no polling fallback)
+- **Auto-reconnect** — up to 5 attempts with a 1500ms delay between each
+- Reconnects automatically when a new Ngrok URL is pasted (dependency on `serverUrl`)
+- Graceful cleanup on unmount: socket is disconnected and the ref is cleared
+
+**Socket events handled:**
+
+| Event | Direction | Description |
+|---|---|---|
+| `chat_msg` | Inbound | Encrypted text message |
+| `media_share` | Inbound | Encrypted Cloudinary media URL |
+| `binary_stroke` | Bidirectional | 5-byte canvas stroke coordinate |
+| `canvas_clear` | Bidirectional | Wipe canvas command |
+| `peer_status` | Inbound | Number of connected clients in room |
+| `room_full` | Inbound | Third-client rejection signal |
+| `reaction` | Bidirectional | Emoji reaction on a message ID |
+| `connect_error` | Inbound | Auth or connection failure |
+
+---
+
+## Project Structure
+
+```
+Duo-Console/
+├── duo-console-core/
+│   └── server.js          # Node.js Socket.io relay server
+└── frontend/
+    └── src/
+        ├── App.tsx                        # Root — routes ConnectScreen ↔ ChatInterface
+        ├── components/
+        │   ├── ConnectScreen.tsx          # URL + PSK entry form
+        │   ├── ChatInterface.tsx          # Main session shell, message state, boss mode
+        │   ├── Sidebar.tsx                # Slide-in panel wrapper for drawing canvas
+        │   ├── DrawingCanvas.tsx          # HTML5 canvas, stroke handlers, binary emit
+        │   └── ImageViewer.tsx            # Image gallery, compression pipeline, upload
+        ├── hooks/
+        │   └── useSocket.ts               # Socket.io client lifecycle + all emitters
+        └── utils/
+            └── crypto.ts                  # AES encrypt/decrypt wrappers (CryptoJS)
+```
+
+---
+
+## Getting Started
+
+### 1. Start the relay server
 
 ```bash
-npm install express socket.io
+cd duo-console-core
+npm install
 node server.js
-
 ```
 
-The application will start, listening for local data traffic on port 3000.
+Server binds to port `3000`.
 
-### Step 2: Establish the WAN Bridge
-
-Open a secondary terminal window and initialize the Ngrok tunneling instance to expose your local port:
+### 2. Expose the server via Ngrok
 
 ```bash
 ngrok http 3000
-
 ```
 
-Locate the forwarding line in the status output interface and copy the generated secure URL (e.g., `https://abcdef123.ngrok-free.app`). Leave this terminal running to maintain the live bridge.
+Copy the generated HTTPS forwarding URL (e.g. `https://abc123.ngrok-free.app`).
 
-### Step 3: Access the Frontend Portal
+### 3. Start the frontend (development)
 
-1. Open the Vercel-deployed static URL on both devices.
-2. Paste the active day's Ngrok URL string into the initialization input bar at the top of the interface.
-3. Input your matching Pre-Shared Key (PSK) if prompted by your specific configuration.
-4. Click Connect.
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-### Step 4: Verification of Secure Link
+Open the Vite dev URL in both browsers. Paste the Ngrok URL and your shared PSK, then click Connect.
 
-The terminal interface log view will display a green system diagnostic line reading `Tunnel established successfully.` You can now exchange end-to-end encrypted text messages, transmit compressed media elements, and draw on the canvas space in real time with absolute pixel fluidity. Closing the terminal windows on your host laptop instantly destroys the tunnel and drops the application entirely offline.
+### 4. Build for production
+
+```bash
+cd frontend
+npm run build
+```
+
+Deploy the `dist/` folder to Vercel or any static host.
+
+---
+
+## Environment Notes
+
+- The `AUTH_TOKEN` in `server.js` and `useSocket.ts` must match exactly. Update both before deploying.
+- Add your Vercel production URL to the `cors.origin` array in `server.js` before going live.
+- Ngrok URLs are ephemeral — a new URL is generated each session. Both users need the current day's URL.

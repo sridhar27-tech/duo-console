@@ -15,7 +15,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 
-// Pre-shared token — must match AUTH_TOKEN in duo-console-core/server.js
+// Pre-shared token — matches the updated duo-console-core/server.js configuration
 const AUTH_TOKEN = "duo-console-secret-2025";
 
 export interface ChatPayload {
@@ -24,9 +24,11 @@ export interface ChatPayload {
   ts: number;     // timestamp for ordering
 }
 
+// Updated payload to support structured direct CDN image distribution
 export interface MediaPayload {
-  cipher: string; // AES-encrypted Cloudinary URL
-  ts: number;
+  msgId: string;
+  mediaUrl: string;
+  timestamp: number;
 }
 
 export interface ReactionPayload {
@@ -81,7 +83,12 @@ export function useSocket({
     socket.on("media_share", onMediaShare);
     socket.on("binary_stroke", onBinaryStroke);
     socket.on("canvas_clear", onCanvasClear);
-    socket.on("peer_status", onPeerStatus);
+    socket.on("peer_status", (statusData: any) => {
+      // Formats the server layout ping to match what your React layout expects
+      // If server emits string "online", connected count is evaluated as 2
+      const isOnline = statusData === "online";
+      onPeerStatus({ connected: isOnline ? 2 : 1 });
+    });
     socket.on("room_full", onRoomFull);
     socket.on("reaction", onReaction);
 
@@ -99,6 +106,12 @@ export function useSocket({
   }, [serverUrl]);
 
   // ── Emitters ──────────────────────────────────────────────────────────────
+
+  // ── Step 3: Dynamic Room Router Hook ──
+  // Triggers the server routing switchboard to place the client inside an isolated room.
+  const joinRoom = useCallback((roomId: string) => {
+    socketRef.current?.emit("join_room", roomId);
+  }, []);
 
   const sendChatMsg = useCallback((payload: ChatPayload) => {
     socketRef.current?.emit("chat_msg", payload);
@@ -129,5 +142,12 @@ export function useSocket({
     socketRef.current?.emit("reaction", payload);
   }, []);
 
-  return { sendChatMsg, sendMediaShare, sendBinaryStroke, sendCanvasClear, sendReaction };
+  return { 
+    joinRoom, // Expose the new room trigger to ChatInterface.tsx
+    sendChatMsg, 
+    sendMediaShare, 
+    sendBinaryStroke, 
+    sendCanvasClear, 
+    sendReaction 
+  };
 }

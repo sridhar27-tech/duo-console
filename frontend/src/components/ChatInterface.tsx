@@ -10,11 +10,16 @@ import ImageViewer from "./ImageViewer";
 import { useSocket, type ChatPayload } from "../hooks/useSocket";
 import { encryptAES, decryptAES } from "../utils/crypto";
 
+// ── Pulling Cloudinary Config Safe from Vite Environment ────────────────────
+const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "";
+const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "duo_console_preset";
+
 interface Message {
   id: number;
   sender: "me" | "peer";
   text: string;
   time: string;
+  mediaUrl?: string; // Opt-in support for Cloudinary asset delivery
   reactions: Record<string, number>; // emoji → count
 }
 
@@ -73,6 +78,27 @@ export default function ChatInterface({
     [psk],
   );
 
+  // ── Incoming Media Share handler from Peer ──────────────────────────────────
+  const handleIncomingMedia = useCallback(
+    (payload: { msgId: string; mediaUrl: string; timestamp: number }) => {
+      setMessages((current) => [
+        ...current,
+        {
+          id: payload.timestamp,
+          sender: "peer",
+          text: "[Shared Image]",
+          mediaUrl: payload.mediaUrl,
+          reactions: {},
+          time: new Date(payload.timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ]);
+    },
+    []
+  );
+
   // ── Incoming reaction from peer ────────────────────────────────────────────
   const handleIncomingReaction = useCallback(
     (payload: { msgId: number; emoji: string }) => {
@@ -104,10 +130,10 @@ export default function ChatInterface({
   }, []);
 
   // ── Socket hook ────────────────────────────────────────────────────────────
-  const { sendChatMsg, sendBinaryStroke, sendCanvasClear, sendReaction } = useSocket({
+  const { sendChatMsg, sendBinaryStroke, sendCanvasClear, sendReaction, sendMediaShare } = useSocket({
     serverUrl: connectionString,
     onChatMsg: handleIncomingChat,
-    onMediaShare: () => {},
+    onMediaShare: handleIncomingMedia, // Wire up the inbound media stream pipeline
     onBinaryStroke: handleBinaryStroke,
     onCanvasClear: () => {
       canvasClearRef.current?.();
@@ -118,16 +144,67 @@ export default function ChatInterface({
     onReaction: handleIncomingReaction,
   });
 
+  // ── Upload locally compressed file directly to Cloudinary ──────────────────
+  const handleMediaUploadAndShare = async (compressedFile: File) => {
+    if (!CLOUD_NAME) {
+      console.error("Cloudinary Cloud Name is missing in .env config!");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", compressedFile);
+    formData.append("upload_preset", UPLOAD_PRESET);
+
+    try {
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Direct CDN upload failed with status code ${response.status}`);
+      }
+
+      const uploadData = await response.json();
+      const secureUrl = uploadData.secure_url;
+      const ts = Date.now();
+      const msgId = `media-${Math.random().toString(36).substr(2, 9)}`;
+
+      // Append locally for rendering inside your layout immediately
+      setMessages((current) => [
+        ...current,
+        {
+          id: ts,
+          sender: "me",
+          text: "[Shared Image]",
+          mediaUrl: secureUrl,
+          reactions: {},
+          time: new Date(ts).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ]);
+
+      // Emit over socket tunnel for peer rendering synchronization
+      sendMediaShare?.({ msgId, mediaUrl: secureUrl, timestamp: ts });
+
+    } catch (err) {
+      console.error("Cloudinary network drop:", err);
+      alert("Failed to transit compiled image. Verification dropped.");
+    }
+  };
+
   // ── Gate 3: Escape key boss trigger ────────────────────────────────────────
-  // Instantly clears the visible message feed and wipes the canvas
-  // when Escape is pressed — leaves a blank, uninformative screen.
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape" && !imageViewerOpen) {
         setBossMode((prev) => {
           const next = !prev;
           if (next) {
-            // Wipe canvas visual immediately
             canvasClearRef.current?.();
           }
           return next;
@@ -146,7 +223,6 @@ export default function ChatInterface({
     const ts = Date.now();
     const cipher = encryptAES(text, psk);
 
-    // Optimistic local append (sender = "me")
     setMessages((current) => [
       ...current,
       {
@@ -161,7 +237,6 @@ export default function ChatInterface({
       },
     ]);
 
-    // Emit encrypted ciphertext — server routes it without decrypting
     sendChatMsg({ cipher, ts });
     setMessage("");
   };
@@ -169,7 +244,6 @@ export default function ChatInterface({
   // ── React to a message ─────────────────────────────────────────────────────
   const handleReact = useCallback(
     (msgId: number, emoji: string) => {
-      // Apply locally
       setMessages((current) =>
         current.map((msg) =>
           msg.id === msgId
@@ -183,7 +257,6 @@ export default function ChatInterface({
             : msg,
         ),
       );
-      // Sync to peer
       sendReaction({ msgId, emoji });
       setActiveReactionId(null);
     },
@@ -197,7 +270,6 @@ export default function ChatInterface({
     }
   };
 
-  // ── Render guards ──────────────────────────────────────────────────────────
   if (authError) {
     return (
       <main className="connect-stage">
@@ -270,7 +342,6 @@ export default function ChatInterface({
           </div>
         </header>
 
-        {/* Gate 3: Boss trigger overlay */}
         {bossMode && (
           <div
             className="boss-overlay"
@@ -284,7 +355,6 @@ export default function ChatInterface({
 
         {!bossMode && (
           <section className="console-grid">
-            {/* ── Chat Panel ── */}
             <section className="chat-panel" aria-label="Chat interface">
               <div className="panel-heading brutal-heading">
                 <span>CHAT PIT</span>
@@ -306,7 +376,20 @@ export default function ChatInterface({
                       <span>{item.sender === "me" ? "Lane B" : "Lane A"}</span>
                       <time>{item.time}</time>
                     </div>
-                    <p>{item.text}</p>
+
+                    {/* ── Standard Text or Dynamic Image Render Box ── */}
+                    {item.mediaUrl ? (
+                      <div className="chat-media-attachment">
+                        <img 
+                          src={item.mediaUrl} 
+                          alt="Encrypted CDN Asset" 
+                          className="chat-embedded-image"
+                          style={{ maxWidth: "100%", borderRadius: "4px", border: "2px solid var(--fg)" }}
+                        />
+                      </div>
+                    ) : (
+                      <p>{item.text}</p>
+                    )}
 
                     {/* ── Reactions row ── */}
                     <div className="reaction-row">
@@ -372,7 +455,6 @@ export default function ChatInterface({
         )}
       </main>
 
-      {/* ── Canvas Sidebar ── */}
       <Sidebar
         id="canvas-sidebar"
         isOpen={canvasOpen}
@@ -386,6 +468,7 @@ export default function ChatInterface({
       <ImageViewer
         isOpen={imageViewerOpen}
         onClose={() => setImageViewerOpen(false)}
+        onShare={handleMediaUploadAndShare} // Wire upload directly into the carousel share triggers
       />
     </>
   );
