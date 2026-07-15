@@ -44,14 +44,15 @@ export default function ChatInterface({
   // Gate 3: Boss trigger — tracks whether the feed is wiped from view
   const [bossMode, setBossMode] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatFeedRef = useRef<HTMLDivElement>(null);
   const canvasClearRef = useRef<(() => void) | null>(null);
   const peerStrokeRef = useRef<((buffer: ArrayBuffer) => void) | null>(null);
 
-  // ── Scroll to bottom when new messages arrive ──────────────────────────────
+  // ── Scroll feed container to bottom when new messages arrive ──────────────
+  // Uses scrollTop on the feed div itself so the page never scrolls.
   useEffect(() => {
-    if (!bossMode) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!bossMode && chatFeedRef.current) {
+      chatFeedRef.current.scrollTop = chatFeedRef.current.scrollHeight;
     }
   }, [messages, bossMode]);
 
@@ -356,7 +357,7 @@ export default function ChatInterface({
                 <strong>{messages.length} notes</strong>
               </div>
 
-              <div className="chat-feed">
+              <div className="chat-feed" ref={chatFeedRef}>
                 {messages.length === 0 && (
                   <p className="chat-empty">
                     Waiting for transmission…
@@ -423,7 +424,6 @@ export default function ChatInterface({
                     </div>
                   </article>
                 ))}
-                <div ref={messagesEndRef} />
               </div>
 
               <footer className="message-composer">
