@@ -28,6 +28,17 @@ interface ChatInterfaceProps {
   psk: string;
 }
 
+const SPINNER_FRAMES = ["/", "—", "\\", "|"] as const;
+
+function TerminalSpinner() {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setFrame((f) => (f + 1) % SPINNER_FRAMES.length), 200);
+    return () => clearInterval(id);
+  }, []);
+  return <span className="typing-spinner" aria-hidden="true">{SPINNER_FRAMES[frame]}</span>;
+}
+
 export default function ChatInterface({
   connectionString,
   psk,
@@ -44,9 +55,16 @@ export default function ChatInterface({
   // Gate 3: Boss trigger — tracks whether the feed is wiped from view
   const [bossMode, setBossMode] = useState(false);
 
+  // Typing indicator — true while peer has an active input session
+  const [peerIsTyping, setPeerIsTyping] = useState(false);
+
   const chatFeedRef = useRef<HTMLDivElement>(null);
   const canvasClearRef = useRef<(() => void) | null>(null);
   const peerStrokeRef = useRef<((buffer: ArrayBuffer) => void) | null>(null);
+  // Timer ref for the local debounce — cleared on each new keystroke
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks whether we've already emitted isTyping:true for the current burst
+  const isTypingEmittedRef = useRef(false);
 
   // ── Scroll feed container to bottom when new messages arrive ──────────────
   // Uses scrollTop on the feed div itself so the page never scrolls.
@@ -126,10 +144,10 @@ export default function ChatInterface({
   }, []);
 
   // ── Socket hook ────────────────────────────────────────────────────────────
-  const { sendChatMsg, sendBinaryStroke, sendCanvasClear, sendReaction, sendMediaShare } = useSocket({
+  const { sendChatMsg, sendBinaryStroke, sendCanvasClear, sendReaction, sendMediaShare, sendTypingState } = useSocket({
     serverUrl: connectionString,
     onChatMsg: handleIncomingChat,
-    onMediaShare: handleIncomingMedia, // Wire up the inbound media stream pipeline
+    onMediaShare: handleIncomingMedia,
     onBinaryStroke: handleBinaryStroke,
     onCanvasClear: () => {
       canvasClearRef.current?.();
@@ -138,6 +156,7 @@ export default function ChatInterface({
     onRoomFull: () => setRoomFull(true),
     onAuthError: (reason) => setAuthError(reason),
     onReaction: handleIncomingReaction,
+    onTypingState: ({ isTyping }) => setPeerIsTyping(isTyping),
   });
 
   // ── Upload locally compressed file directly to Cloudinary ──────────────────
@@ -211,6 +230,39 @@ export default function ChatInterface({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [imageViewerOpen]);
 
+  // ── Debounced typing state emitter ────────────────────────────────────────
+  // Emits isTyping:true once per burst (not on every keystroke).
+  // Emits isTyping:false after 1500ms of silence.
+  const handleTypingChange = useCallback(
+    (value: string) => {
+      setMessage(value);
+
+      if (!value) {
+        // Input was cleared (e.g. after send) — emit idle immediately
+        if (isTypingEmittedRef.current) {
+          sendTypingState(false);
+          isTypingEmittedRef.current = false;
+        }
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        return;
+      }
+
+      // First keystroke of a new burst — emit active once
+      if (!isTypingEmittedRef.current) {
+        sendTypingState(true);
+        isTypingEmittedRef.current = true;
+      }
+
+      // Reset idle timer on every keystroke
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = setTimeout(() => {
+        sendTypingState(false);
+        isTypingEmittedRef.current = false;
+      }, 1500);
+    },
+    [sendTypingState],
+  );
+
   // ── Send a message ─────────────────────────────────────────────────────────
   const sendMessage = () => {
     const text = message.trim();
@@ -235,6 +287,13 @@ export default function ChatInterface({
 
     sendChatMsg({ cipher, ts });
     setMessage("");
+
+    // Clear typing indicator immediately — don't wait for the debounce timer
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    if (isTypingEmittedRef.current) {
+      sendTypingState(false);
+      isTypingEmittedRef.current = false;
+    }
   };
 
   // ── React to a message ─────────────────────────────────────────────────────
@@ -427,10 +486,16 @@ export default function ChatInterface({
               </div>
 
               <footer className="message-composer">
+                {peerIsTyping && (
+                  <div className="typing-indicator" role="status" aria-live="polite">
+                    <span className="typing-text">typing</span>
+                    <TerminalSpinner />
+                  </div>
+                )}
                 <div className="composer-row">
                   <textarea
                     value={message}
-                    onChange={(event) => setMessage(event.target.value)}
+                    onChange={(event) => handleTypingChange(event.target.value)}
                     onKeyDown={handleMessageKeyDown}
                     placeholder="Type chaos here… (Enter to send)"
                     rows={2}

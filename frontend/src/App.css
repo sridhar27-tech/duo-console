@@ -364,6 +364,7 @@ button:disabled {
     border-top: var(--border);
     background: var(--sun);
     padding: 14px;
+    position: relative;
 }
 
 .sender-switch {
@@ -1166,4 +1167,70 @@ button:disabled {
     .image-display-section {
         min-height: 240px;
     }
+}
+
+/* ─── Typing Indicator ───────────────────────────────────────────────────── */
+
+.typing-indicator {
+    position: absolute;
+    bottom: calc(100% - 4px); /* float flush above the composer border */
+    left: 14px;
+    right: 14px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    background: var(--black);
+    border: 3px solid var(--black);
+    border-bottom: none;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--acid);
+    letter-spacing: 0.06em;
+    pointer-events: none;
+    animation: typing-slide-in 160ms ease forwards;
+}
+
+@keyframes typing-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.typing-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* Spinner character is driven by JS (TerminalSpinner component) */
+.typing-spinner {
+    flex-shrink: 0;
+    display: inline-block;
+    width: 1ch;
+    text-align: center;
+    color: var(--acid);
+    font-weight: 1000;
+}
+
+/* Blinking cursor appended after the spinner */
+.typing-indicator::after {
+    content: "_";
+    color: var(--acid);
+    font-weight: 1000;
+    animation: blink-cursor 900ms step-end infinite;
+}
+
+@keyframes blink-cursor {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
 }

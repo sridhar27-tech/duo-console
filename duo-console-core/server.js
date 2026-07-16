@@ -126,6 +126,14 @@ io.on('connection', (socket) => {
     socket.to(activeRoomId).emit('media_share', payload);
   });
 
+  // --- TYPING STATE RELAY ---
+  // Lightweight system event — not encrypted, just a boolean flag.
+  // Relay to the peer only; don't echo back to the sender.
+  socket.on('typing_state', (payload) => {
+    if (!activeRoomId) return;
+    socket.to(activeRoomId).emit('typing_state', payload);
+  });
+
   // --- TEARDOWN ON DISCONNECT ---
   socket.on('disconnect', () => {
     console.log(`[DISCONNECT] Client disconnected: ${socket.id}`);

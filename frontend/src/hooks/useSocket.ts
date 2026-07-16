@@ -36,6 +36,10 @@ export interface ReactionPayload {
   emoji: string;
 }
 
+export interface TypingStatePayload {
+  isTyping: boolean;
+}
+
 export interface PeerStatus {
   connected: number;
 }
@@ -50,6 +54,7 @@ interface UseSocketOptions {
   onRoomFull: () => void;
   onAuthError: (reason: string) => void;
   onReaction: (payload: ReactionPayload) => void;
+  onTypingState: (payload: TypingStatePayload) => void;
 }
 
 export function useSocket({
@@ -62,6 +67,7 @@ export function useSocket({
   onRoomFull,
   onAuthError,
   onReaction,
+  onTypingState,
 }: UseSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
 
@@ -91,6 +97,7 @@ export function useSocket({
     });
     socket.on("room_full", onRoomFull);
     socket.on("reaction", onReaction);
+    socket.on("typing_state", onTypingState);
 
     // Join the default room immediately on connect so relay events have context
     socket.on("connect", () => {
@@ -170,12 +177,17 @@ export function useSocket({
     socketRef.current?.emit("reaction", payload);
   }, []);
 
+  const sendTypingState = useCallback((isTyping: boolean) => {
+    socketRef.current?.emit("typing_state", { isTyping });
+  }, []);
+
   return { 
-    joinRoom, // Expose the new room trigger to ChatInterface.tsx
+    joinRoom,
     sendChatMsg, 
     sendMediaShare, 
     sendBinaryStroke, 
     sendCanvasClear, 
-    sendReaction 
+    sendReaction,
+    sendTypingState,
   };
 }
