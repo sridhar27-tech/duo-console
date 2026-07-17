@@ -33,6 +33,11 @@ interface DrawingCanvasProps {
    * directly onto this canvas without re-renders.
    */
   peerStrokeRef?: MutableRefObject<((buffer: ArrayBuffer) => void) | null>;
+  /**
+   * Called with a compressed JPEG File after the user clicks the snapshot
+   * button. Parent routes this into handleMediaUploadAndShare → Cloudinary.
+   */
+  onExportSnapshot?: (file: File) => void;
 }
 
 export default function DrawingCanvas({
@@ -40,12 +45,15 @@ export default function DrawingCanvas({
   onClear,
   clearRef,
   peerStrokeRef,
+  onExportSnapshot,
 }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const resizeCanvasRef = useRef<() => void>(() => {});
   const [color, setColor] = useState(inkColors[0]);
   const [brushSize, setBrushSize] = useState(7);
+  // Track whether anything has been drawn — disables the snap button on a blank canvas
+  const [hasDrawn, setHasDrawn] = useState(false);
 
   // ── Canvas resize with snapshot preservation ──────────────────────────────
   useEffect(() => {
@@ -114,6 +122,7 @@ export default function DrawingCanvas({
       context.setTransform(1, 0, 0, 1, 0, 0);
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      setHasDrawn(false);
     };
   }, [clearRef]);
 
@@ -188,6 +197,9 @@ export default function DrawingCanvas({
     context.lineWidth = brushSize;
     context.moveTo(point.x, point.y);
 
+    // Mark canvas as non-empty so the snap button becomes active
+    setHasDrawn(true);
+
     // Opcode 0x01 — signals the peer to beginPath at this coordinate
     onStroke?.(point.x, point.y, 0x01, color);
   };
@@ -222,8 +234,45 @@ export default function DrawingCanvas({
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    setHasDrawn(false);
     // Notify peer
     onClear?.();
+  };
+
+  // ── Snapshot export ───────────────────────────────────────────────────────
+  // Composites a solid dark background beneath the strokes (transparent canvas
+  // exports would render as invisible in the chat feed), then runs the result
+  // through the existing compression pipeline via the onExportSnapshot callback.
+  const exportSnapshot = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !onExportSnapshot) return;
+
+    // Offscreen composite: dark console background + current strokes
+    const offscreen = document.createElement("canvas");
+    offscreen.width = canvas.width;
+    offscreen.height = canvas.height;
+    const ctx = offscreen.getContext("2d");
+    if (!ctx) return;
+
+    // Fill background matching the console theme (#f7efd2 paper colour)
+    ctx.fillStyle = "#f7efd2";
+    ctx.fillRect(0, 0, offscreen.width, offscreen.height);
+
+    // Draw the live strokes on top
+    ctx.drawImage(canvas, 0, 0);
+
+    // Export as JPEG blob and hand off to the compression + upload pipeline
+    offscreen.toBlob(
+      (blob) => {
+        if (!blob) return;
+        const file = new File([blob], `canvas-snapshot-${Date.now()}.jpg`, {
+          type: "image/jpeg",
+        });
+        onExportSnapshot(file);
+      },
+      "image/jpeg",
+      0.92, // High quality here — handleMediaUploadAndShare re-compresses to 50%
+    );
   };
 
   return (
@@ -258,6 +307,19 @@ export default function DrawingCanvas({
         <button className="clear-doodle" type="button" onClick={clearCanvas}>
           Clear
         </button>
+
+        {onExportSnapshot && (
+          <button
+            className="snap-btn"
+            type="button"
+            onClick={exportSnapshot}
+            disabled={!hasDrawn}
+            aria-label="Share canvas snapshot to chat"
+            title={hasDrawn ? "Share to chat" : "Draw something first"}
+          >
+            📷 Snap
+          </button>
+        )}
       </div>
 
       <canvas

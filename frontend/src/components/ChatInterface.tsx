@@ -523,6 +523,7 @@ export default function ChatInterface({
         onClear={sendCanvasClear}
         clearRef={canvasClearRef}
         peerStrokeRef={peerStrokeRef}
+        onExportSnapshot={handleMediaUploadAndShare}
       />
 
       <ImageViewer

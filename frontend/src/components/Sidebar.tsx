@@ -9,6 +9,7 @@ interface SidebarProps {
   onClear?: () => void
   clearRef?: MutableRefObject<(() => void) | null>
   peerStrokeRef?: MutableRefObject<((buffer: ArrayBuffer) => void) | null>
+  onExportSnapshot?: (file: File) => void
 }
 
 export default function Sidebar({
@@ -19,6 +20,7 @@ export default function Sidebar({
   onClear,
   clearRef,
   peerStrokeRef,
+  onExportSnapshot,
 }: SidebarProps) {
   return (
     <>
@@ -53,6 +55,7 @@ export default function Sidebar({
           onClear={onClear}
           clearRef={clearRef}
           peerStrokeRef={peerStrokeRef}
+          onExportSnapshot={onExportSnapshot}
         />
       </aside>
     </>
