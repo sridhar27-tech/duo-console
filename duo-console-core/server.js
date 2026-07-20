@@ -9,7 +9,8 @@ const server = http.createServer(app);
 
 // 1. Production-Ready CORS Configuration
 const ALLOWED_ORIGINS = [
-  "http://localhost:5173", 
+  "http://localhost:5173",
+  "http://localhost:4173", // Vite preview
   // "https://your-app-name.vercel.app" // <- Uncomment and paste your Vercel deployment URL here later
 ];
 
