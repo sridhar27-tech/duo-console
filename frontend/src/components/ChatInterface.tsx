@@ -9,6 +9,7 @@ import Sidebar from "./Sidebar";
 import ImageViewer from "./ImageViewer";
 import { useSocket, type ChatPayload } from "../hooks/useSocket";
 import { encryptAES, decryptAES } from "../utils/crypto";
+import { useAudioFX } from "../hooks/useAudioFX";
 
 // ── Pulling Cloudinary Config Safe from Vite Environment ────────────────────
 const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "";
@@ -19,8 +20,8 @@ interface Message {
   sender: "me" | "peer";
   text: string;
   time: string;
-  mediaUrl?: string; // Opt-in support for Cloudinary asset delivery
-  reactions: Record<string, number>; // emoji → count
+  mediaUrl?: string;
+  reactions: Record<string, number>;
 }
 
 interface ChatInterfaceProps {
@@ -52,33 +53,35 @@ export default function ChatInterface({
   const [roomFull, setRoomFull] = useState(false);
   const [activeReactionId, setActiveReactionId] = useState<number | null>(null);
 
-  // Gate 3: Boss trigger — tracks whether the feed is wiped from view
+  // Gate 3: Boss trigger
   const [bossMode, setBossMode] = useState(false);
 
-  // Typing indicator — true while peer has an active input session
+  // Typing indicator
   const [peerIsTyping, setPeerIsTyping] = useState(false);
+
+  // ── Audio FX — always enabled at this stage (sfxEnabled wired in next commit)
+  const { playKeyclick, playReceive, playTransmit, playHandshake, playBossAlarm } =
+    useAudioFX(false);
 
   const chatFeedRef = useRef<HTMLDivElement>(null);
   const canvasClearRef = useRef<(() => void) | null>(null);
   const peerStrokeRef = useRef<((buffer: ArrayBuffer) => void) | null>(null);
-  // Timer ref for the local debounce — cleared on each new keystroke
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Tracks whether we've already emitted isTyping:true for the current burst
   const isTypingEmittedRef = useRef(false);
 
-  // ── Scroll feed container to bottom when new messages arrive ──────────────
-  // Uses scrollTop on the feed div itself so the page never scrolls.
   useEffect(() => {
     if (!bossMode && chatFeedRef.current) {
       chatFeedRef.current.scrollTop = chatFeedRef.current.scrollHeight;
     }
   }, [messages, bossMode]);
 
-  // ── Incoming chat message handler ──────────────────────────────────────────
+  // ── Incoming chat message handler ─────────────────────────────────────────
   const handleIncomingChat = useCallback(
     (payload: ChatPayload) => {
       const plaintext = decryptAES(payload.cipher, psk);
-      if (!plaintext) return; // wrong key or tampered payload — silently discard
+      if (!plaintext) return;
+
+      playReceive();
 
       setMessages((current) => [
         ...current,
@@ -94,10 +97,9 @@ export default function ChatInterface({
         },
       ]);
     },
-    [psk],
+    [psk, playReceive],
   );
 
-  // ── Incoming Media Share handler from Peer ──────────────────────────────────
   const handleIncomingMedia = useCallback(
     (payload: { msgId: string; mediaUrl: string; timestamp: number }) => {
       setMessages((current) => [
@@ -118,7 +120,6 @@ export default function ChatInterface({
     []
   );
 
-  // ── Incoming reaction from peer ────────────────────────────────────────────
   const handleIncomingReaction = useCallback(
     (payload: { msgId: number; emoji: string }) => {
       setMessages((current) =>
@@ -138,57 +139,46 @@ export default function ChatInterface({
     [],
   );
 
-  // ── Incoming binary stroke — pass raw buffer directly to canvas renderer ──
   const handleBinaryStroke = useCallback((buffer: ArrayBuffer) => {
     peerStrokeRef.current?.(buffer);
   }, []);
 
-  // ── Socket hook ────────────────────────────────────────────────────────────
+  // ── Socket hook ───────────────────────────────────────────────────────────
   const { sendChatMsg, sendBinaryStroke, sendCanvasClear, sendReaction, sendMediaShare, sendTypingState } = useSocket({
     serverUrl: connectionString,
     onChatMsg: handleIncomingChat,
     onMediaShare: handleIncomingMedia,
     onBinaryStroke: handleBinaryStroke,
-    onCanvasClear: () => {
-      canvasClearRef.current?.();
+    onCanvasClear: () => { canvasClearRef.current?.(); },
+    onPeerStatus: ({ connected }) => {
+      const online = connected >= 2;
+      if (online && !peerOnline) playHandshake();
+      setPeerOnline(online);
     },
-    onPeerStatus: ({ connected }) => setPeerOnline(connected >= 2),
     onRoomFull: () => setRoomFull(true),
     onAuthError: (reason) => setAuthError(reason),
     onReaction: handleIncomingReaction,
     onTypingState: ({ isTyping }) => setPeerIsTyping(isTyping),
   });
 
-  // ── Upload locally compressed file directly to Cloudinary ──────────────────
   const handleMediaUploadAndShare = async (compressedFile: File) => {
     if (!CLOUD_NAME) {
       console.error("Cloudinary Cloud Name is missing in .env config!");
       return;
     }
-
     const formData = new FormData();
     formData.append("file", compressedFile);
     formData.append("upload_preset", UPLOAD_PRESET);
-
     try {
       const response = await fetch(
         `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
-        {
-          method: "POST",
-          body: formData,
-        }
+        { method: "POST", body: formData }
       );
-
-      if (!response.ok) {
-        throw new Error(`Direct CDN upload failed with status code ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`CDN upload failed: ${response.status}`);
       const uploadData = await response.json();
       const secureUrl = uploadData.secure_url;
       const ts = Date.now();
       const msgId = `media-${Math.random().toString(36).substr(2, 9)}`;
-
-      // Append locally for rendering inside your layout immediately
       setMessages((current) => [
         ...current,
         {
@@ -197,23 +187,17 @@ export default function ChatInterface({
           text: "[Shared Image]",
           mediaUrl: secureUrl,
           reactions: {},
-          time: new Date(ts).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
+          time: new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
-
-      // Emit over socket tunnel for peer rendering synchronization
       sendMediaShare?.({ msgId, mediaUrl: secureUrl, timestamp: ts });
-
     } catch (err) {
       console.error("Cloudinary network drop:", err);
       alert("Failed to transit compiled image. Verification dropped.");
     }
   };
 
-  // ── Gate 3: Escape key boss trigger ────────────────────────────────────────
+  // ── Gate 3: Escape — boss alarm ───────────────────────────────────────────
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape" && !imageViewerOpen) {
@@ -221,6 +205,7 @@ export default function ChatInterface({
           const next = !prev;
           if (next) {
             canvasClearRef.current?.();
+            playBossAlarm();
           }
           return next;
         });
@@ -228,17 +213,16 @@ export default function ChatInterface({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [imageViewerOpen]);
+  }, [imageViewerOpen, playBossAlarm]);
 
-  // ── Debounced typing state emitter ────────────────────────────────────────
-  // Emits isTyping:true once per burst (not on every keystroke).
-  // Emits isTyping:false after 1500ms of silence.
+  // ── Debounced typing state + keyclick ─────────────────────────────────────
   const handleTypingChange = useCallback(
     (value: string) => {
       setMessage(value);
 
+      if (value.length > message.length) playKeyclick();
+
       if (!value) {
-        // Input was cleared (e.g. after send) — emit idle immediately
         if (isTypingEmittedRef.current) {
           sendTypingState(false);
           isTypingEmittedRef.current = false;
@@ -246,31 +230,25 @@ export default function ChatInterface({
         if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
         return;
       }
-
-      // First keystroke of a new burst — emit active once
       if (!isTypingEmittedRef.current) {
         sendTypingState(true);
         isTypingEmittedRef.current = true;
       }
-
-      // Reset idle timer on every keystroke
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       typingTimerRef.current = setTimeout(() => {
         sendTypingState(false);
         isTypingEmittedRef.current = false;
       }, 1500);
     },
-    [sendTypingState],
+    [sendTypingState, message, playKeyclick],
   );
 
-  // ── Send a message ─────────────────────────────────────────────────────────
+  // ── Send message + transmit beep ─────────────────────────────────────────
   const sendMessage = () => {
     const text = message.trim();
     if (!text) return;
-
     const ts = Date.now();
     const cipher = encryptAES(text, psk);
-
     setMessages((current) => [
       ...current,
       {
@@ -278,17 +256,12 @@ export default function ChatInterface({
         sender: "me",
         text,
         reactions: {},
-        time: new Date(ts).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
+        time: new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       },
     ]);
-
     sendChatMsg({ cipher, ts });
     setMessage("");
-
-    // Clear typing indicator immediately — don't wait for the debounce timer
+    playTransmit();
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     if (isTypingEmittedRef.current) {
       sendTypingState(false);
@@ -296,19 +269,12 @@ export default function ChatInterface({
     }
   };
 
-  // ── React to a message ─────────────────────────────────────────────────────
   const handleReact = useCallback(
     (msgId: number, emoji: string) => {
       setMessages((current) =>
         current.map((msg) =>
           msg.id === msgId
-            ? {
-                ...msg,
-                reactions: {
-                  ...msg.reactions,
-                  [emoji]: (msg.reactions[emoji] ?? 0) + 1,
-                },
-              }
+            ? { ...msg, reactions: { ...msg.reactions, [emoji]: (msg.reactions[emoji] ?? 0) + 1 } }
             : msg,
         ),
       );
@@ -331,9 +297,7 @@ export default function ChatInterface({
         <div className="connect-card">
           <h1>connection refused</h1>
           <p style={{ fontWeight: 900, color: "var(--orange)" }}>{authError}</p>
-          <button type="button" onClick={() => window.location.reload()}>
-            Retry
-          </button>
+          <button type="button" onClick={() => window.location.reload()}>Retry</button>
         </div>
       </main>
     );
@@ -344,12 +308,8 @@ export default function ChatInterface({
       <main className="connect-stage">
         <div className="connect-card">
           <h1>room full</h1>
-          <p style={{ fontWeight: 900 }}>
-            Only two clients allowed at a time.
-          </p>
-          <button type="button" onClick={() => window.location.reload()}>
-            Try again
-          </button>
+          <p style={{ fontWeight: 900 }}>Only two clients allowed at a time.</p>
+          <button type="button" onClick={() => window.location.reload()}>Try again</button>
         </div>
       </main>
     );
@@ -378,11 +338,7 @@ export default function ChatInterface({
           </div>
 
           <div className="topbar-actions">
-            <button
-              className="canvas-toggle"
-              type="button"
-              onClick={() => setImageViewerOpen(true)}
-            >
+            <button className="canvas-toggle" type="button" onClick={() => setImageViewerOpen(true)}>
               Images
             </button>
             <button
@@ -398,11 +354,7 @@ export default function ChatInterface({
         </header>
 
         {bossMode && (
-          <div
-            className="boss-overlay"
-            role="status"
-            aria-label="Display cleared"
-          >
+          <div className="boss-overlay" role="status" aria-label="Display cleared">
             <p>Module 4: Spatial Vector Processing Controls</p>
             <span className="boss-hint">Press Esc to restore</span>
           </div>
@@ -418,9 +370,7 @@ export default function ChatInterface({
 
               <div className="chat-feed" ref={chatFeedRef}>
                 {messages.length === 0 && (
-                  <p className="chat-empty">
-                    Waiting for transmission…
-                  </p>
+                  <p className="chat-empty">Waiting for transmission…</p>
                 )}
                 {messages.map((item) => (
                   <article
@@ -431,13 +381,11 @@ export default function ChatInterface({
                       <span>{item.sender === "me" ? "Lane B" : "Lane A"}</span>
                       <time>{item.time}</time>
                     </div>
-
-                    {/* ── Standard Text or Dynamic Image Render Box ── */}
                     {item.mediaUrl ? (
                       <div className="chat-media-attachment">
-                        <img 
-                          src={item.mediaUrl} 
-                          alt="Encrypted CDN Asset" 
+                        <img
+                          src={item.mediaUrl}
+                          alt="Encrypted CDN Asset"
                           className="chat-embedded-image"
                           style={{ maxWidth: "100%", borderRadius: "4px", border: "2px solid var(--fg)" }}
                         />
@@ -445,8 +393,6 @@ export default function ChatInterface({
                     ) : (
                       <p>{item.text}</p>
                     )}
-
-                    {/* ── Reactions row ── */}
                     <div className="reaction-row">
                       {Object.entries(item.reactions).map(([emoji, count]) => (
                         <span key={emoji} className="reaction-chip">
@@ -458,9 +404,7 @@ export default function ChatInterface({
                         type="button"
                         aria-label="Add reaction"
                         onClick={() =>
-                          setActiveReactionId(
-                            activeReactionId === item.id ? null : item.id,
-                          )
+                          setActiveReactionId(activeReactionId === item.id ? null : item.id)
                         }
                       >
                         +
@@ -501,11 +445,7 @@ export default function ChatInterface({
                     rows={2}
                     aria-label="Message input"
                   />
-                  <button
-                    type="button"
-                    onClick={sendMessage}
-                    disabled={!message.trim()}
-                  >
+                  <button type="button" onClick={sendMessage} disabled={!message.trim()}>
                     Send
                   </button>
                 </div>
@@ -529,7 +469,7 @@ export default function ChatInterface({
       <ImageViewer
         isOpen={imageViewerOpen}
         onClose={() => setImageViewerOpen(false)}
-        onShare={handleMediaUploadAndShare} // Wire upload directly into the carousel share triggers
+        onShare={handleMediaUploadAndShare}
       />
     </>
   );
