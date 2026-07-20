@@ -10,6 +10,15 @@ import ImageViewer from "./ImageViewer";
 import { useSocket, type ChatPayload } from "../hooks/useSocket";
 import { encryptAES, decryptAES } from "../utils/crypto";
 import { useAudioFX } from "../hooks/useAudioFX";
+import {
+  type ThemeId,
+  nextTheme,
+  applyTheme,
+  setCRTMode,
+  loadPreferences,
+  savePreferences,
+  THEMES,
+} from "../utils/themeConfig";
 
 // ── Pulling Cloudinary Config Safe from Vite Environment ────────────────────
 const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "";
@@ -59,9 +68,21 @@ export default function ChatInterface({
   // Typing indicator
   const [peerIsTyping, setPeerIsTyping] = useState(false);
 
-  // ── Audio FX — always enabled at this stage (sfxEnabled wired in next commit)
+  // ── Theme / SFX / CRT — loaded from localStorage on mount ─────────────────
+  const [sfxEnabled, setSfxEnabled] = useState<boolean>(() => loadPreferences().sfxEnabled);
+  const [theme, setTheme] = useState<ThemeId>(() => loadPreferences().theme);
+  const [crtEnabled, setCrtEnabled] = useState<boolean>(() => loadPreferences().crtEnabled);
+
+  // Apply persisted theme + CRT on first render
+  useEffect(() => {
+    applyTheme(theme);
+    setCRTMode(crtEnabled);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Audio FX — muted flag driven by sfxEnabled state ──────────────────────
   const { playKeyclick, playReceive, playTransmit, playHandshake, playBossAlarm } =
-    useAudioFX(false);
+    useAudioFX(!sfxEnabled);
 
   const chatFeedRef = useRef<HTMLDivElement>(null);
   const canvasClearRef = useRef<(() => void) | null>(null);
@@ -243,7 +264,7 @@ export default function ChatInterface({
     [sendTypingState, message, playKeyclick],
   );
 
-  // ── Send message + transmit beep ─────────────────────────────────────────
+  // ── Send message + transmit beep ──────────────────────────────────────────
   const sendMessage = () => {
     const text = message.trim();
     if (!text) return;
@@ -290,6 +311,27 @@ export default function ChatInterface({
       sendMessage();
     }
   };
+
+  // ── Theme / SFX / CRT toggle handlers ────────────────────────────────────
+  const handleThemeCycle = useCallback(() => {
+    const next = nextTheme(theme);
+    setTheme(next);
+    applyTheme(next);
+    savePreferences(next, sfxEnabled, crtEnabled);
+  }, [theme, sfxEnabled, crtEnabled]);
+
+  const handleSfxToggle = useCallback(() => {
+    const next = !sfxEnabled;
+    setSfxEnabled(next);
+    savePreferences(theme, next, crtEnabled);
+  }, [sfxEnabled, theme, crtEnabled]);
+
+  const handleCrtToggle = useCallback(() => {
+    const next = !crtEnabled;
+    setCrtEnabled(next);
+    setCRTMode(next);
+    savePreferences(theme, sfxEnabled, next);
+  }, [crtEnabled, theme, sfxEnabled]);
 
   if (authError) {
     return (
@@ -338,6 +380,37 @@ export default function ChatInterface({
           </div>
 
           <div className="topbar-actions">
+            {/* ── System control bar ── */}
+            <div className="control-bar" role="toolbar" aria-label="Display and audio controls">
+              <button
+                className="ctrl-btn"
+                type="button"
+                onClick={handleThemeCycle}
+                title="Cycle colour theme"
+                aria-label={`Current theme: ${THEMES.find(t => t.id === theme)?.label}. Click to cycle.`}
+              >
+                THEME: {THEMES.find(t => t.id === theme)?.label}
+              </button>
+              <button
+                className={`ctrl-btn ${crtEnabled ? "active" : "inactive"}`}
+                type="button"
+                onClick={handleCrtToggle}
+                title="Toggle CRT scanline overlay"
+                aria-pressed={crtEnabled}
+              >
+                CRT: {crtEnabled ? "ON" : "OFF"}
+              </button>
+              <button
+                className={`ctrl-btn ${sfxEnabled ? "active" : "inactive"}`}
+                type="button"
+                onClick={handleSfxToggle}
+                title="Toggle sound effects"
+                aria-pressed={sfxEnabled}
+              >
+                SFX: {sfxEnabled ? "ON" : "OFF"}
+              </button>
+            </div>
+
             <button className="canvas-toggle" type="button" onClick={() => setImageViewerOpen(true)}>
               Images
             </button>
