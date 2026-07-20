@@ -1439,3 +1439,280 @@ button:disabled {
   transform: none;
   box-shadow: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VISUAL THEMES — data-theme attribute on <html>
+   All themes override the :root CSS variables inline via applyTheme().
+   The selectors below handle structural colour roles that can't be
+   covered by variable swaps alone (e.g. selection highlight, scrollbar).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Shared dark-theme base: invert border colour to avoid black-on-black ── */
+[data-theme="amber"],
+[data-theme="matrix"],
+[data-theme="cyberpunk"],
+[data-theme="stealth"] {
+    --border: 3px solid var(--aqua);
+    --shadow: 8px 8px 0 var(--aqua);
+    --shadow-small: 4px 4px 0 var(--aqua);
+}
+
+/* ── Amber phosphor ──────────────────────────────────────────────────────── */
+[data-theme="amber"] {
+    color-scheme: dark;
+}
+
+[data-theme="amber"] ::selection {
+    background: #ffb000;
+    color: #120a00;
+}
+
+[data-theme="amber"] ::-webkit-scrollbar-track { background: #120a00; }
+[data-theme="amber"] ::-webkit-scrollbar-thumb { background: #ffb000; border-color: #120a00; }
+
+[data-theme="amber"] .connect-stage,
+[data-theme="amber"] .console-page {
+    background: #120a00;
+}
+
+[data-theme="amber"] .chat-bubble.left  { background: #3d1f00; }
+[data-theme="amber"] .chat-bubble.right { background: #2a1500; }
+
+/* ── Matrix green ────────────────────────────────────────────────────────── */
+[data-theme="matrix"] {
+    color-scheme: dark;
+}
+
+[data-theme="matrix"] ::selection {
+    background: #00ff66;
+    color: #020d04;
+}
+
+[data-theme="matrix"] ::-webkit-scrollbar-track { background: #020d04; }
+[data-theme="matrix"] ::-webkit-scrollbar-thumb { background: #00ff66; border-color: #020d04; }
+
+[data-theme="matrix"] .connect-stage,
+[data-theme="matrix"] .console-page {
+    background: #020d04;
+}
+
+[data-theme="matrix"] .chat-bubble.left  { background: #062e0e; }
+[data-theme="matrix"] .chat-bubble.right { background: #041a07; }
+
+/* ── Cyberpunk neon ──────────────────────────────────────────────────────── */
+[data-theme="cyberpunk"] {
+    color-scheme: dark;
+}
+
+[data-theme="cyberpunk"] ::selection {
+    background: #00f0ff;
+    color: #0a0012;
+}
+
+[data-theme="cyberpunk"] ::-webkit-scrollbar-track { background: #0a0012; }
+[data-theme="cyberpunk"] ::-webkit-scrollbar-thumb { background: #00f0ff; border-color: #0a0012; }
+
+[data-theme="cyberpunk"] .connect-stage,
+[data-theme="cyberpunk"] .console-page {
+    background: #0a0012;
+}
+
+[data-theme="cyberpunk"] .chat-bubble.left  { background: #1a0030; }
+[data-theme="cyberpunk"] .chat-bubble.right { background: #120022; }
+
+/* ── Stealth monochrome ──────────────────────────────────────────────────── */
+[data-theme="stealth"] {
+    color-scheme: dark;
+}
+
+[data-theme="stealth"] ::selection {
+    background: #ffffff;
+    color: #0d1117;
+}
+
+[data-theme="stealth"] ::-webkit-scrollbar-track { background: #0d1117; }
+[data-theme="stealth"] ::-webkit-scrollbar-thumb { background: #8899a6; border-color: #0d1117; }
+
+[data-theme="stealth"] .connect-stage,
+[data-theme="stealth"] .console-page {
+    background: #0d1117;
+}
+
+[data-theme="stealth"] .chat-bubble.left  { background: #21262d; }
+[data-theme="stealth"] .chat-bubble.right { background: #161b22; }
+
+/* ── All dark themes: readable button text ───────────────────────────────── */
+[data-theme="amber"] button,
+[data-theme="matrix"] button,
+[data-theme="cyberpunk"] button,
+[data-theme="stealth"] button {
+    color: var(--black);
+}
+
+[data-theme="amber"] .brand-a,
+[data-theme="matrix"] .brand-a,
+[data-theme="cyberpunk"] .brand-a,
+[data-theme="stealth"] .brand-a {
+    background: var(--aqua);
+    color: var(--black);
+}
+
+[data-theme="amber"] .brand-b,
+[data-theme="matrix"] .brand-b,
+[data-theme="cyberpunk"] .brand-b,
+[data-theme="stealth"] .brand-b {
+    background: var(--pink);
+    color: var(--black);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CRT SCANLINE OVERLAY — data-crt="on" on <html>
+   A fixed full-viewport pseudo-element on <body> renders the scanlines.
+   The flicker animation is applied on top via a second keyframe.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-crt="on"] body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 3px,
+        rgba(0, 0, 0, 0.13) 3px,
+        rgba(0, 0, 0, 0.13) 4px
+    );
+    /* Subtle phosphor glow vignette at edges */
+    mask-image: radial-gradient(
+        ellipse 100% 100% at 50% 50%,
+        black 60%,
+        transparent 100%
+    );
+}
+
+/* Screen flicker — very subtle, 0.6% opacity oscillation */
+[data-crt="on"] body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9998;
+    background: transparent;
+    animation: crt-flicker 0.12s step-end infinite;
+    opacity: 0;
+}
+
+@keyframes crt-flicker {
+    0%   { opacity: 0; }
+    92%  { opacity: 0; }
+    93%  { opacity: 0.04; }
+    95%  { opacity: 0; }
+    97%  { opacity: 0.03; }
+    100% { opacity: 0; }
+}
+
+/* ── Phosphor text-glow on dark themes when CRT is on ───────────────────── */
+[data-crt="on"][data-theme="amber"] .chat-bubble p,
+[data-crt="on"][data-theme="amber"] .brand-lockup p {
+    text-shadow: 0 0 8px rgba(255, 176, 0, 0.7),
+                 0 0 20px rgba(255, 176, 0, 0.3);
+}
+
+[data-crt="on"][data-theme="matrix"] .chat-bubble p,
+[data-crt="on"][data-theme="matrix"] .brand-lockup p {
+    text-shadow: 0 0 8px rgba(0, 255, 102, 0.7),
+                 0 0 20px rgba(0, 255, 102, 0.3);
+}
+
+[data-crt="on"][data-theme="cyberpunk"] .chat-bubble p,
+[data-crt="on"][data-theme="cyberpunk"] .brand-lockup p {
+    text-shadow: 0 0 8px rgba(0, 240, 255, 0.7),
+                 0 0 20px rgba(0, 240, 255, 0.3);
+}
+
+[data-crt="on"][data-theme="stealth"] .chat-bubble p,
+[data-crt="on"][data-theme="stealth"] .brand-lockup p {
+    text-shadow: 0 0 6px rgba(136, 153, 166, 0.6),
+                 0 0 16px rgba(136, 153, 166, 0.2);
+}
+
+/* ── Respect reduced motion: disable flicker and glow ───────────────────── */
+@media (prefers-reduced-motion: reduce) {
+    [data-crt="on"] body::after {
+        animation: none;
+    }
+
+    [data-crt="on"] .chat-bubble p,
+    [data-crt="on"] .brand-lockup p {
+        text-shadow: none;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONTROL BAR — [THEME: X] [SFX: ON] [CRT: OFF] buttons in topbar
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.control-bar {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.ctrl-btn {
+    min-height: 36px;
+    padding: 4px 10px;
+    border: 3px solid var(--black);
+    background: var(--cream);
+    box-shadow: 3px 3px 0 var(--black);
+    font-family: "Courier New", Courier, monospace;
+    font-size: 0.72rem;
+    font-weight: 1000;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+    color: var(--black);
+}
+
+.ctrl-btn:hover {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 var(--black);
+}
+
+.ctrl-btn.active {
+    background: var(--acid);
+}
+
+.ctrl-btn.inactive {
+    opacity: 0.5;
+    background: var(--cream);
+}
+
+/* Override border/shadow colour on dark themes */
+[data-theme="amber"] .ctrl-btn,
+[data-theme="matrix"] .ctrl-btn,
+[data-theme="cyberpunk"] .ctrl-btn,
+[data-theme="stealth"] .ctrl-btn {
+    border-color: var(--aqua);
+    box-shadow: 3px 3px 0 var(--aqua);
+    color: var(--aqua);
+    background: var(--paper);
+}
+
+[data-theme="amber"] .ctrl-btn.active,
+[data-theme="matrix"] .ctrl-btn.active,
+[data-theme="cyberpunk"] .ctrl-btn.active,
+[data-theme="stealth"] .ctrl-btn.active {
+    background: var(--aqua);
+    color: var(--black);
+}
+
+[data-theme="amber"] .ctrl-btn:hover,
+[data-theme="matrix"] .ctrl-btn:hover,
+[data-theme="cyberpunk"] .ctrl-btn:hover,
+[data-theme="stealth"] .ctrl-btn:hover {
+    box-shadow: 1px 1px 0 var(--aqua);
+}
