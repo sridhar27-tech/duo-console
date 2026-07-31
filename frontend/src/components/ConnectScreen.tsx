@@ -1,11 +1,14 @@
 import { useState, type FormEvent } from "react";
+import { DEFAULT_SOCKET_URL } from "../hooks/useSocket";
 
 interface ConnectScreenProps {
   onConnect: (connectionString: string, psk: string) => void;
 }
 
 export default function ConnectScreen({ onConnect }: ConnectScreenProps) {
-  const [url, setUrl] = useState("");
+  // Pre-fill the URL from VITE_SOCKET_URL so the host only needs to share the PSK.
+  // The field remains editable — paste a new Ngrok URL at any time.
+  const [url, setUrl] = useState(DEFAULT_SOCKET_URL);
   const [psk, setPsk] = useState("");
 
   const handleSubmit = (event: FormEvent) => {
@@ -17,13 +20,23 @@ export default function ConnectScreen({ onConnect }: ConnectScreenProps) {
 
   const ready = url.trim() && psk.trim();
 
+  // True when the field still holds the env-configured default (not localhost)
+  const urlIsFromEnv =
+    DEFAULT_SOCKET_URL !== "http://localhost:3000" &&
+    url.trim() === DEFAULT_SOCKET_URL;
+
   return (
     <main className="connect-stage">
       <form className="connect-card" onSubmit={handleSubmit}>
         <h1>duo console</h1>
 
         <label className="connect-label" htmlFor="url-input">
-          Ngrok URL
+          Server URL
+          {urlIsFromEnv && (
+            <span className="connect-label-hint" aria-label="Pre-filled from environment">
+              ⚡ from env
+            </span>
+          )}
         </label>
         <input
           id="url-input"
@@ -31,7 +44,8 @@ export default function ConnectScreen({ onConnect }: ConnectScreenProps) {
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://…ngrok-free.app"
           autoComplete="off"
-          autoFocus
+          // Only auto-focus the URL field if it isn't already filled
+          autoFocus={!urlIsFromEnv}
         />
 
         <label className="connect-label" htmlFor="psk-input">
@@ -44,6 +58,8 @@ export default function ConnectScreen({ onConnect }: ConnectScreenProps) {
           onChange={(e) => setPsk(e.target.value)}
           placeholder="shared encryption key"
           autoComplete="off"
+          // Auto-focus PSK when URL is already filled — saves a click for the host
+          autoFocus={urlIsFromEnv}
         />
 
         <button type="submit" disabled={!ready}>

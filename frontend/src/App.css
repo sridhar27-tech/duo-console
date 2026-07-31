@@ -1716,3 +1716,23 @@ button:disabled {
 [data-theme="stealth"] .ctrl-btn:hover {
     box-shadow: 1px 1px 0 var(--aqua);
 }
+
+/* ─── Connect Screen — env pre-fill badge ────────────────────────────────── */
+
+.connect-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.connect-label-hint {
+    font-size: 0.7rem;
+    font-weight: 1000;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    background: var(--acid);
+    border: 2px solid var(--black);
+    color: var(--black);
+    white-space: nowrap;
+}
