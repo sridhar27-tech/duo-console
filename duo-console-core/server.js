@@ -27,7 +27,7 @@ function corsOriginHandler(origin, callback) {
 // ── 2. Socket.IO Server ───────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin: corsOriginHandler,
+    origin: true,
     methods: ["GET", "POST"],
     credentials: true,
   },
