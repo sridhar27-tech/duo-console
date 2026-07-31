@@ -6,17 +6,32 @@
  * io.use() middleware validates it during the handshake and drops the
  * connection if it's wrong or missing.
  *
- * Binary canvas strokes are packed into a 5-byte ArrayBuffer:
- *   Byte 0      → Opcode (0x01 = draw stroke)
- *   Bytes 1–2   → X (Uint16)
- *   Bytes 3–4   → Y (Uint16)
+ * Transport order: polling → websocket
+ * Polling first lets the initial HTTP handshake complete through the Ngrok
+ * proxy without hitting the browser-warning interstitial (suppressed by the
+ * ngrok-skip-browser-warning header). Socket.io then upgrades to a raw
+ * WebSocket connection for all subsequent traffic.
+ *
+ * Binary canvas strokes are packed into an 8-byte ArrayBuffer:
+ *   Byte 0      → Opcode (0x01 = beginPath, 0x02 = lineTo)
+ *   Bytes 1–2   → X (Uint16, big-endian)
+ *   Bytes 3–4   → Y (Uint16, big-endian)
+ *   Bytes 5–7   → R, G, B (Uint8 each)
  */
 
 import { useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 
-// Pre-shared token — matches the updated duo-console-core/server.js configuration
-const AUTH_TOKEN = "duo-console-secret-2025";
+// ── Connection Config ─────────────────────────────────────────────────────────
+// VITE_SOCKET_URL is set in frontend/.env for both local dev and production.
+// Falls back to localhost:3000 so the server works without an .env file.
+const DEFAULT_SOCKET_URL = import.meta.env.VITE_SOCKET_URL?.trim() || "http://localhost:3000";
+
+// Pre-shared token — must match AUTH_TOKEN in duo-console-core/server.js.
+const AUTH_TOKEN = import.meta.env.VITE_AUTH_TOKEN?.trim() || "duo-console-secret-2025";
+
+// ── Exported constants — used by ConnectScreen to pre-fill the URL field ─────
+export { DEFAULT_SOCKET_URL, AUTH_TOKEN as DEFAULT_AUTH_TOKEN };
 
 export interface ChatPayload {
   cipher: string; // AES-encrypted message text
@@ -74,10 +89,27 @@ export function useSocket({
   useEffect(() => {
     if (!serverUrl) return;
 
-    const socket = io(serverUrl, {
-      // Gate 1: pass auth token in the handshake — validated by io.use() on server
+    // Resolve the actual URL: prefer the explicit prop (user-pasted Ngrok URL),
+    // fall back to the env-configured default so localhost dev needs no input.
+    const resolvedUrl = serverUrl.trim() || DEFAULT_SOCKET_URL;
+
+    const socket = io(resolvedUrl, {
+      // Gate 1: auth token validated by io.use() middleware on the server
       auth: { token: AUTH_TOKEN },
-      transports: ["websocket"], // lock to WS only — avoids polling→upgrade race over Ngrok
+
+      // Transport order: polling first, then upgrade to websocket.
+      // This is required over Ngrok — the initial HTTP polling request carries
+      // the ngrok-skip-browser-warning header which suppresses the interstitial
+      // warning page. A direct websocket-only connection skips that header
+      // entirely and lands on the warning page instead of the server.
+      transports: ["polling", "websocket"],
+
+      // Suppress the Ngrok browser-warning interstitial on the polling request.
+      // Ngrok checks for this header on every HTTP request through the tunnel.
+      extraHeaders: {
+        "ngrok-skip-browser-warning": "true",
+      },
+
       reconnectionAttempts: 5,
       reconnectionDelay: 1500,
     });
