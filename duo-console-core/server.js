@@ -7,149 +7,200 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 
-// 1. Production-Ready CORS Configuration
-const ALLOWED_ORIGINS = [
-  "http://localhost:5173",
-  "http://localhost:4173", // Vite preview
-  // "https://your-app-name.vercel.app" // <- Uncomment and paste your Vercel deployment URL here later
-];
+// ── 1. Dynamic CORS ───────────────────────────────────────────────────────────
+// Allows any localhost port, Vite preview port, Ngrok free/custom domains,
+// and any Vercel deployment URL. The fallback callback(null, true) catches
+// requests with no Origin header (curl, Postman, mobile apps).
+const NGROK_ORIGIN_PATTERN =
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$|^https:\/\/.*\.(ngrok-free\.app|ngrok\.io|ngrok\.dev|vercel\.app)$/;
 
+function corsOriginHandler(origin, callback) {
+  if (!origin || NGROK_ORIGIN_PATTERN.test(origin)) {
+    callback(null, true);
+  } else {
+    // Log the rejected origin so it's easy to diagnose and whitelist
+    console.warn(`[CORS REJECTED] Origin blocked: ${origin}`);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  }
+}
+
+// ── 2. Socket.IO Server ───────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin: ALLOWED_ORIGINS,
+    origin: corsOriginHandler,
     methods: ["GET", "POST"],
-    credentials: true
-  }
+    credentials: true,
+  },
+  // Keep-alive tuning — prevents Ngrok from dropping idle WebSocket connections.
+  // Ngrok terminates tunnels that are silent for >55s, so we ping every 10s.
+  pingInterval: 10000,  // Send a ping every 10 s
+  pingTimeout:  20000,  // Wait up to 20 s for a pong before considering dead
+  // Allow binary ArrayBuffer payloads to pass through without coercion
+  maxHttpBufferSize: 1e6, // 1 MB max per message
 });
 
-// 2. Token Synchronization (must match AUTH_TOKEN in useSocket.ts)
-const AUTH_TOKEN = "duo-console-secret-2025";
+// ── 3. Token Synchronization (must match AUTH_TOKEN in useSocket.ts) ──────────
+const AUTH_TOKEN = process.env.AUTH_TOKEN || "duo-console-secret-2025";
 
-// 3. Security Gate: Handshake Middleware
+// ── 4. Health & Status Endpoints ─────────────────────────────────────────────
+
+/**
+ * GET /health
+ * Lightweight liveness probe — used by curl, uptime monitors, and the
+ * frontend to verify the tunnel is alive before attempting a socket connect.
+ * Returns 200 with a JSON payload.
+ */
+app.get('/health', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.json({
+    status:    'active',
+    uptime:    process.uptime(),
+    timestamp: new Date().toISOString(),
+    version:   '1.0.0',
+  });
+});
+
+/**
+ * GET /status
+ * Extended diagnostic endpoint — includes per-room occupancy so both
+ * clients can verify they are in the same room before exchanging messages.
+ */
+app.get('/status', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  const rooms = {};
+  for (const [roomId, socketSet] of io.sockets.adapter.rooms.entries()) {
+    // Skip the per-socket rooms Socket.IO creates automatically
+    if (io.sockets.sockets.has(roomId)) continue;
+    rooms[roomId] = socketSet.size;
+  }
+
+  res.json({
+    status:          'active',
+    uptime:          process.uptime(),
+    timestamp:       new Date().toISOString(),
+    connectedSockets: io.sockets.sockets.size,
+    rooms,
+  });
+});
+
+// ── 5. Security Gate: Handshake Middleware ────────────────────────────────────
 io.use((socket, next) => {
-  const clientToken = socket.handshake.auth?.token || socket.handshake.query?.token;
+  const clientToken =
+    socket.handshake.auth?.token || socket.handshake.query?.token;
 
   if (clientToken === AUTH_TOKEN) {
     return next();
   }
 
   const authError = new Error('Authentication failed: Invalid security token');
-  authError.data = { details: 'Your frontend token does not match the server configuration.' };
+  authError.data = {
+    details: 'Your frontend token does not match the server configuration.',
+  };
   return next(authError);
 });
 
-// Helper: Get active user count in a specific room
+// ── Helper: Get active user count in a specific room ─────────────────────────
 function getRoomUserCount(roomId) {
   const room = io.sockets.adapter.rooms.get(roomId);
   return room ? room.size : 0;
 }
 
-// 4. Main Connection and Relay Matrix
+// ── 6. Main Connection and Relay Matrix ───────────────────────────────────────
 io.on('connection', (socket) => {
   console.log(`[AUTHED] Client connected: ${socket.id}`);
-  
+
   // Track current room membership for cleanup on unexpected disconnect
   let activeRoomId = null;
 
-  // --- DYNAMIC ROOM ROUTING & CAPACITY ENFORCEMENT ---
+  // ── DYNAMIC ROOM ROUTING & CAPACITY ENFORCEMENT ──────────────────────────
   socket.on('join_room', (roomId) => {
     if (!roomId || typeof roomId !== 'string') {
-      console.log(`[ROOM REJECT] Invalid roomId received from ${socket.id}`);
+      console.log(`[ROOM REJECT] Invalid roomId from ${socket.id}`);
       return;
     }
 
-    // Step out of any existing room before moving to a new chat lane
+    // Leave any existing room before joining a new one
     if (activeRoomId) {
       socket.leave(activeRoomId);
-      console.log(`[ROOM LEAVE] Client ${socket.id} left room: ${activeRoomId}`);
-      
-      // Notify remaining peer in old room of status change
-      socket.to(activeRoomId).emit('peer_status', 'waiting'); 
+      console.log(`[ROOM LEAVE] ${socket.id} left room: ${activeRoomId}`);
+      socket.to(activeRoomId).emit('peer_status', 'waiting');
     }
 
-    // Capacity Check: Enforce strict 1-on-1 private chat limits
+    // Capacity check — strict 1-on-1 private session
     const occupantsCount = getRoomUserCount(roomId);
     if (occupantsCount >= 2) {
-      console.log(`[ROOM FULL] Connection refused for ${socket.id} on room: ${roomId}`);
+      console.log(`[ROOM FULL] Refused ${socket.id} on room: ${roomId}`);
       socket.emit('room_full', { roomId });
       return;
     }
 
-    // Accept client into the isolated room
     socket.join(roomId);
     activeRoomId = roomId;
-    console.log(`[ROOM JOIN] Client ${socket.id} successfully joined room: ${roomId}`);
-    
-    // Acknowledge connection status back to client
+    console.log(`[ROOM JOIN] ${socket.id} joined room: ${roomId}`);
+
     socket.emit('room_joined_status', { success: true, roomId });
 
-    // Broadcast updated peer status to the channel
-    const newOccupantsCount = getRoomUserCount(roomId);
-    if (newOccupantsCount === 2) {
-      // Both users are connected — signal green light
+    const newCount = getRoomUserCount(roomId);
+    if (newCount === 2) {
       io.to(roomId).emit('peer_status', 'online');
     } else {
-      // Only one user is connected — signal orange wait light
       socket.emit('peer_status', 'waiting');
     }
   });
 
-  // --- CHAT MESSAGE RELAY (Low-Frequency encrypted text) ---
+  // ── CHAT MESSAGE RELAY ────────────────────────────────────────────────────
   socket.on('chat_msg', (payload) => {
     if (!activeRoomId) return;
-    // Broadcast the payload containing ciphertext, timestamp, and msgId to the peer
     socket.to(activeRoomId).emit('chat_msg', payload);
   });
 
-  // --- WHITEBOARD RELAY (High-Frequency raw 5-byte binary protocol) ---
+  // ── WHITEBOARD RELAY (raw 8-byte binary protocol) ─────────────────────────
   socket.on('binary_stroke', (buffer) => {
     if (!activeRoomId) return;
-    // Bypass parsing. Forward the raw binary ArrayBuffer directly to the peer
     socket.to(activeRoomId).emit('binary_stroke', buffer);
   });
 
-  // --- CANVAS CLEAR RELAY ---
+  // ── CANVAS CLEAR RELAY ────────────────────────────────────────────────────
   socket.on('canvas_clear', () => {
     if (!activeRoomId) return;
     socket.to(activeRoomId).emit('canvas_clear');
   });
 
-  // --- REACTION RELAY ---
+  // ── REACTION RELAY ────────────────────────────────────────────────────────
   socket.on('reaction', (payload) => {
     if (!activeRoomId) return;
-    // Relay target msgId and chosen emoji
     socket.to(activeRoomId).emit('reaction', payload);
   });
 
-  // --- MEDIA SHARE URL RELAY (Cloudinary payloads) ---
+  // ── MEDIA SHARE URL RELAY (Cloudinary payloads) ───────────────────────────
   socket.on('media_share', (payload) => {
     if (!activeRoomId) return;
     socket.to(activeRoomId).emit('media_share', payload);
   });
 
-  // --- TYPING STATE RELAY ---
-  // Lightweight system event — not encrypted, just a boolean flag.
-  // Relay to the peer only; don't echo back to the sender.
+  // ── TYPING STATE RELAY ────────────────────────────────────────────────────
   socket.on('typing_state', (payload) => {
     if (!activeRoomId) return;
     socket.to(activeRoomId).emit('typing_state', payload);
   });
 
-  // --- TEARDOWN ON DISCONNECT ---
-  socket.on('disconnect', () => {
-    console.log(`[DISCONNECT] Client disconnected: ${socket.id}`);
+  // ── TEARDOWN ON DISCONNECT ────────────────────────────────────────────────
+  socket.on('disconnect', (reason) => {
+    console.log(`[DISCONNECT] ${socket.id} — reason: ${reason}`);
     if (activeRoomId) {
-      // Inform the remaining peer in the chat that their counterpart has left
       socket.to(activeRoomId).emit('peer_status', 'waiting');
     }
   });
 });
 
-// 5. Port Binding
+// ── 7. Port Binding ───────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n=================================================`);
-  console.log(`  DUO CONSOLE CORE RUNNING ON PORT ${PORT}      `);
-  console.log(`  Security Token: "${AUTH_TOKEN}"                `);
-  console.log(`=================================================\n`);
+  console.log(`\n================================================`);
+  console.log(`  DUO CONSOLE CORE  —  port ${PORT}`);
+  console.log(`  Auth token: "${AUTH_TOKEN}"`);
+  console.log(`  Health:     http://localhost:${PORT}/health`);
+  console.log(`  Status:     http://localhost:${PORT}/status`);
+  console.log(`================================================\n`);
 });
