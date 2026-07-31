@@ -9,7 +9,8 @@
     "dev:tunnel": "concurrently --names \"SERVER,TUNNEL\" --prefix-colors \"cyan,yellow\" \"npm run server\" \"npm run tunnel\"",
     "dev:full": "concurrently --names \"SERVER,TUNNEL,CLIENT\" --prefix-colors \"cyan,yellow,magenta\" \"npm run server\" \"npm run tunnel\" \"npm run --prefix frontend dev\"",
     "start": "node duo-console-core/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare": "husky install"
   },
   "repository": {
     "type": "git",
@@ -28,6 +29,7 @@
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
-    "concurrently": "^10.0.4"
+    "concurrently": "^10.0.4",
+    "husky": "^8.0.0"
   }
 }

@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run TypeScript type-check + Vite build from the frontend workspace.
+# Blocks the commit if the build fails.
+npm run build --prefix frontend
