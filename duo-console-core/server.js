@@ -4,6 +4,10 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 
+// ── Utilities ─────────────────────────────────────────────────────────────────
+const { uploadTransientMedia, purgeExpiredMedia } = require('./utils/cloudinaryService');
+const { initCleanupCron } = require('./utils/cleanupJob');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -203,4 +207,7 @@ server.listen(PORT, () => {
   console.log(`  Health:     http://localhost:${PORT}/health`);
   console.log(`  Status:     http://localhost:${PORT}/status`);
   console.log(`================================================\n`);
+
+  // Start the hourly Cloudinary auto-purge cron job
+  initCleanupCron();
 });
