@@ -4,6 +4,11 @@
   "description": "Duo console is a high-performance, two-party socket programming architecture built for low-latency text communication and real-time canvas synchronization over secure local tunnels. Designed to bypass network restrictions with a zero-cloud backend footprint, the system connects a globally accessible static frontend with a local Node.js relay server using Socket.io over a persistent TCP pipeline.",
   "main": "index.js",
   "scripts": {
+    "server": "node duo-console-core/server.js",
+    "tunnel": "ngrok http 3000",
+    "dev:tunnel": "concurrently --names \"SERVER,TUNNEL\" --prefix-colors \"cyan,yellow\" \"npm run server\" \"npm run tunnel\"",
+    "dev:full": "concurrently --names \"SERVER,TUNNEL,CLIENT\" --prefix-colors \"cyan,yellow,magenta\" \"npm run server\" \"npm run tunnel\" \"npm run --prefix frontend dev\"",
+    "start": "node duo-console-core/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -21,5 +26,8 @@
   "dependencies": {
     "express": "^5.2.1",
     "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.4"
   }
 }
